@@ -10,7 +10,8 @@
     "typecheck": "tsc",
     "test": "vitest run",
     "e2e": "playwright test",
-    "icons": "node scripts/make-icons.mjs"
+    "icons": "node scripts/make-icons.mjs",
+    "deploy": "sh scripts/deploy-pages.sh"
   },
   "dependencies": {
     "dexie": "^4.4.6",
