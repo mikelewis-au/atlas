@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { Link, useParams } from 'react-router'
+import { childLabel, childrenOf } from '../lib/children'
 import { formatDate, todayIso } from '../lib/dates'
 import { relationsOf } from '../lib/links'
 import { MAP_SECTIONS, type SectionInfo, sectionInfo } from '../lib/map'
@@ -99,10 +100,17 @@ export default function MapPage() {
 function Cast({ person }: { person: Person }) {
   const vault = useVault()
   const relations = relationsOf(vault.all('link'), person.id)
+  const kids = childrenOf(vault.all('child'), person.id)
   return (
     <section className="card flex flex-col gap-2">
       <h2 className="section-title">Cast of characters</h2>
-      {relations.length === 0 && <p className="muted">No one linked yet.</p>}
+      {relations.length === 0 && kids.length === 0 && <p className="muted">No one linked yet.</p>}
+      {kids.length > 0 && (
+        <p>
+          <span className="muted mr-2">Kids</span>
+          {kids.map((child) => childLabel(child)).join(', ')}
+        </p>
+      )}
       <ul>
         {relations.map((relation) => {
           const other = vault.get('person', relation.otherId)

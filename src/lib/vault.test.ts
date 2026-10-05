@@ -1,6 +1,7 @@
 import 'fake-indexeddb/auto'
 import { describe, expect, it } from 'vitest'
-import { deletePerson, recentPeople } from './people'
+import { addChild, childrenOf } from './children'
+import { connect, deletePerson, recentPeople } from './people'
 import { BackupFormatError, Vault, WrongSecretError } from './vault'
 
 const PASSPHRASE = 'correct horse battery'
@@ -255,5 +256,84 @@ describe('recentPeople', () => {
       mate.id,
       dave.id,
     ])
+  })
+})
+
+describe('children and couples', () => {
+  async function couple() {
+    const { vault, dave } = await seeded()
+    const sarah = await vault.create('person', { name: 'Sarah', circle: true, tags: [] })
+    const kidsOf = (id: string) => childrenOf(vault.all('child'), id).map((child) => child.name)
+    return { vault, dave, sarah, kidsOf }
+  }
+
+  it('shows a child on both cards when added to someone in a couple', async () => {
+    const { vault, dave, sarah, kidsOf } = await couple()
+    await connect(vault, dave.id, sarah.id, 'partner')
+    await addChild(vault, sarah.id, 'Mia 2019')
+    expect(kidsOf(dave.id)).toEqual(['Mia'])
+    expect(kidsOf(sarah.id)).toEqual(['Mia'])
+    expect(vault.all('child')).toHaveLength(1)
+    expect(vault.all('person')).toHaveLength(2)
+  })
+
+  it('shares existing children both ways when two people are linked as a couple', async () => {
+    const { vault, dave, sarah, kidsOf } = await couple()
+    await addChild(vault, dave.id, 'Mia')
+    await addChild(vault, sarah.id, 'Ollie')
+    expect(kidsOf(sarah.id)).toEqual(['Ollie'])
+
+    await connect(vault, dave.id, sarah.id, 'partner')
+    expect(kidsOf(dave.id)).toEqual(['Mia', 'Ollie'])
+    expect(kidsOf(sarah.id)).toEqual(['Mia', 'Ollie'])
+  })
+
+  it('does not share children across other kinds of link', async () => {
+    const { vault, dave, sarah, kidsOf } = await couple()
+    await addChild(vault, dave.id, 'Mia')
+    await connect(vault, dave.id, sarah.id, 'friend')
+    expect(kidsOf(sarah.id)).toEqual([])
+  })
+
+  it('reports a duplicate connection without adding it', async () => {
+    const { vault, dave, sarah } = await couple()
+    expect(await connect(vault, dave.id, sarah.id, 'partner')).toBe(true)
+    expect(await connect(vault, sarah.id, dave.id, 'partner')).toBe(false)
+    expect(vault.all('link')).toHaveLength(1)
+  })
+
+  it('keeps children on both cards after the couple ends, and off a former partner for new ones', async () => {
+    const { vault, dave, sarah, kidsOf } = await couple()
+    await connect(vault, dave.id, sarah.id, 'partner')
+    await addChild(vault, dave.id, 'Mia')
+    await vault.update('link', vault.all('link')[0].id, { ended: true })
+
+    const jo = await vault.create('person', { name: 'Jo', circle: true, tags: [] })
+    await connect(vault, dave.id, jo.id, 'partner')
+    await addChild(vault, dave.id, 'Baby')
+
+    expect(kidsOf(sarah.id)).toEqual(['Mia'])
+    expect(kidsOf(dave.id)).toEqual(['Mia', 'Baby'])
+    expect(kidsOf(jo.id)).toEqual(['Mia', 'Baby'])
+  })
+
+  it('ignores blank text', async () => {
+    const { vault, dave } = await couple()
+    expect(await addChild(vault, dave.id, '   ')).toBeUndefined()
+    expect(vault.all('child')).toEqual([])
+  })
+
+  it('keeps a shared child on the partner when one parent is deleted, and removes an unshared one', async () => {
+    const { vault, dave, sarah, kidsOf } = await couple()
+    await addChild(vault, dave.id, 'Solo')
+    const lonely = await vault.create('person', { name: 'Lonely', circle: true, tags: [] })
+    await addChild(vault, lonely.id, 'Only Mine')
+    await connect(vault, dave.id, sarah.id, 'partner')
+
+    await deletePerson(vault, dave.id)
+    await deletePerson(vault, lonely.id)
+
+    expect(kidsOf(sarah.id)).toEqual(['Solo'])
+    expect(vault.all('child').map((child) => child.name)).toEqual(['Solo'])
   })
 })

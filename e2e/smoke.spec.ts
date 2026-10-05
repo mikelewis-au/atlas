@@ -19,10 +19,18 @@ test('set up, record a person and a love map, and find it all after a restart', 
   await page.getByRole('button', { name: 'Save note' }).click()
   await expect(page.getByTestId('briefing')).toContainText('Starting a new job in March')
 
-  await page.getByLabel('Relationship').selectOption('child')
-  await page.getByPlaceholder('Their name').fill('Mia')
+  await page.getByLabel("Child's name").fill('Mia 2019')
+  await page.getByRole('button', { name: 'Add child' }).click()
+  await page.getByPlaceholder('Their name').fill('Sarah Tester')
   await page.getByRole('button', { name: 'Add connection' }).click()
-  await expect(page.getByTestId('briefing')).toContainText('Mia')
+  await expect(page.getByTestId('briefing')).toContainText('Sarah Tester')
+  await expect(page.getByTestId('briefing')).toContainText(/Mia \(~\d+\)/)
+
+  await page.getByTestId('briefing').getByRole('link', { name: 'Sarah Tester' }).click()
+  await expect(page.getByRole('heading', { name: 'Sarah Tester' })).toBeVisible()
+  await expect(page.getByTestId('briefing')).toContainText('Dave Tester')
+  await expect(page.getByTestId('kids')).toContainText('Mia')
+  await page.getByTestId('briefing').getByRole('link', { name: 'Dave Tester' }).click()
 
   await page.locator('header').getByRole('button', { name: 'Edit' }).click()
   await page.getByLabel('Keep a love map').check()

@@ -31,6 +31,15 @@ export interface Link extends Base {
   ended?: boolean
 }
 
+/** A child kept as a name on their parents' cards rather than as a person of their own. */
+export interface Child extends Base {
+  type: 'child'
+  parentIds: string[]
+  name: string
+  /** 'YYYY' or 'YYYY-MM-DD' */
+  born?: string
+}
+
 export interface Note extends Base {
   type: 'note'
   personId: string
@@ -87,6 +96,7 @@ export interface Question extends Base {
 export interface RecordMap {
   person: Person
   link: Link
+  child: Child
   note: Note
   fact: Fact
   loop: OpenLoop

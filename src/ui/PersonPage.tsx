@@ -8,12 +8,11 @@ import {
   type Role,
   canEnd,
   household,
-  linkExists,
-  linkFor,
   relationsOf,
 } from '../lib/links'
 import type { Note, Person, Space } from '../lib/model'
-import { deletePerson, notesFor } from '../lib/people'
+import { addChild, childLabel, childrenOf } from '../lib/children'
+import { connect, deletePerson, notesFor } from '../lib/people'
 import {
   ConfirmButton,
   Page,
@@ -94,6 +93,7 @@ export default function PersonPage() {
       <NoteForm personId={person.id} />
       <Loops personId={person.id} />
       <Facts personId={person.id} />
+      <Kids personId={person.id} />
       <Connections person={person} relations={relations} />
       <Notes personId={person.id} />
     </Page>
@@ -229,6 +229,7 @@ function Briefing({ person, relations }: { person: Person; relations: Relation[]
     .all('loop')
     .filter((loop) => loop.personId === person.id && loop.status === 'open')
   const home = household(relations)
+  const kids = childrenOf(vault.all('child'), person.id)
 
   return (
     <section className="card flex flex-col gap-3" data-testid="briefing">
@@ -256,7 +257,7 @@ function Briefing({ person, relations }: { person: Person; relations: Relation[]
           </ul>
         </div>
       )}
-      {home.length > 0 && (
+      {(home.length > 0 || kids.length > 0) && (
         <div>
           <h2 className="section-title">Household</h2>
           <ul>
@@ -264,6 +265,12 @@ function Briefing({ person, relations }: { person: Person; relations: Relation[]
               <RelationLine key={relation.link.id} relation={relation} />
             ))}
           </ul>
+          {kids.length > 0 && (
+            <p>
+              <span className="muted mr-2">Kids</span>
+              {kids.map((child) => childLabel(child)).join(', ')}
+            </p>
+          )}
         </div>
       )}
     </section>
@@ -447,6 +454,47 @@ function Facts({ personId }: { personId: string }) {
   )
 }
 
+function Kids({ personId }: { personId: string }) {
+  const vault = useVault()
+  const [text, setText] = useState('')
+  const kids = childrenOf(vault.all('child'), personId)
+
+  async function add(event: React.FormEvent) {
+    event.preventDefault()
+    if (await addChild(vault, personId, text)) setText('')
+  }
+
+  return (
+    <section className="card flex flex-col gap-2" data-testid="kids">
+      <h2 className="section-title">Kids</h2>
+      {kids.map((child) => (
+        <div key={child.id} className="flex items-start justify-between gap-2">
+          <span>{childLabel(child)}</span>
+          <ConfirmButton
+            label="Remove"
+            confirmLabel="Tap again"
+            className="muted underline"
+            onConfirm={() => void vault.remove(child.id)}
+          />
+        </div>
+      ))}
+      <form onSubmit={add} className="flex gap-2">
+        <input
+          className="input"
+          placeholder="Name, or name and birth year"
+          aria-label="Child's name"
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+        />
+        <button className="btn shrink-0" disabled={!text.trim()}>
+          Add child
+        </button>
+      </form>
+      <p className="muted">Kids also show on the card of anyone linked as their partner.</p>
+    </section>
+  )
+}
+
 const NEW_PERSON = 'new'
 
 function Connections({ person, relations }: { person: Person; relations: Relation[] }) {
@@ -474,9 +522,9 @@ function Connections({ person, relations }: { person: Person; relations: Relatio
           tags: [],
         })).id
     }
-    const link = linkFor(person.id, targetId, role)
-    if (linkExists(vault.all('link'), link)) return setError('That connection is already recorded.')
-    await vault.create('link', link)
+    if (!(await connect(vault, person.id, targetId, role))) {
+      return setError('That connection is already recorded.')
+    }
     setNewName('')
     setOtherId(NEW_PERSON)
   }
@@ -521,7 +569,7 @@ function Connections({ person, relations }: { person: Person; relations: Relatio
           >
             {ROLES.map((option) => (
               <option key={option} value={option}>
-                {ROLE_LABELS[option]}
+                {option === 'child' ? 'Child (own card)' : ROLE_LABELS[option]}
               </option>
             ))}
           </select>

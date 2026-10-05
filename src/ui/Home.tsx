@@ -18,6 +18,7 @@ export default function Home() {
   const results = searchPeople(query, {
     people: everyone,
     links: vault.all('link'),
+    children: vault.all('child'),
     facts: vault.all('fact'),
     notes: vault.all('note'),
     mapEntries: vault.all('mapEntry'),

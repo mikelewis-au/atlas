@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest'
+import { childLabel, childrenOf, parseChild } from './children'
 import { newRecoveryKey, normaliseRecoveryKey } from './crypto'
 import { ageLabel, parseBorn, todayIso } from './dates'
 import { canEnd, household, linkExists, linkFor, relationsOf, roleOf } from './links'
-import type { Fact, Link, MapEntry, Note, Person } from './model'
+import type { Child, Fact, Link, MapEntry, Note, Person } from './model'
 import { searchPeople } from './search'
 import { inSide } from './space'
 
@@ -153,7 +154,17 @@ describe('searchPeople', () => {
       sensitive: false,
     },
   ]
-  const data = { people, links: [link('l1', 'dave', 'mia', 'parent')], facts, notes, mapEntries }
+  const children: Child[] = [
+    { ...base, type: 'child', id: 'c1', parentIds: ['priya', 'dave'], name: 'Ollie' },
+  ]
+  const data = {
+    people,
+    links: [link('l1', 'dave', 'mia', 'parent')],
+    children,
+    facts,
+    notes,
+    mapEntries,
+  }
   const names = (query: string) => searchPeople(query, data).map((p) => p.name)
 
   it('returns nothing for an empty query', () => {
@@ -179,6 +190,10 @@ describe('searchPeople', () => {
   it('finds a parent by their child\'s name, and the child too', () => {
     expect(names('mia')).toEqual(['Dave Tester', 'Mia'])
   })
+
+  it('finds every parent of a child kept as a name', () => {
+    expect(names('ollie')).toEqual(['Dave Tester', 'Priya Shah'])
+  })
 })
 
 describe('inSide', () => {
@@ -195,5 +210,52 @@ describe('inSide', () => {
   it('puts people marked both on each side', () => {
     expect(inSide(person('a', 'A', { space: 'both' }), 'work')).toBe(true)
     expect(inSide(person('a', 'A', { space: 'both' }), 'personal')).toBe(true)
+  })
+})
+
+describe('children kept as names', () => {
+  const today = new Date(2026, 9, 5)
+  const child = (id: string, name: string, extra: Partial<Child> = {}): Child => ({
+    ...base,
+    type: 'child',
+    id,
+    parentIds: ['dave'],
+    name,
+    ...extra,
+  })
+
+  it('takes plain text as the name', () => {
+    expect(parseChild('  Mia  ', today)).toEqual({ name: 'Mia' })
+    expect(parseChild('Mary Jane', today)).toEqual({ name: 'Mary Jane' })
+    expect(parseChild('   ', today)).toBeUndefined()
+  })
+
+  it('splits off a trailing birth year or date', () => {
+    expect(parseChild('Mia 2019', today)).toEqual({ name: 'Mia', born: '2019' })
+    expect(parseChild('Mary Jane 2019-03-01', today)).toEqual({
+      name: 'Mary Jane',
+      born: '2019-03-01',
+    })
+  })
+
+  it('keeps an implausible year as part of the name', () => {
+    expect(parseChild('Mia 2099', today)).toEqual({ name: 'Mia 2099' })
+    expect(parseChild('Mia 1066', today)).toEqual({ name: 'Mia 1066' })
+    expect(parseChild('2019', today)).toEqual({ name: '2019' })
+  })
+
+  it('labels a child with a current age when the birth is known', () => {
+    expect(childLabel(child('c1', 'Mia', { born: '2019' }), today)).toBe('Mia (~7)')
+    expect(childLabel(child('c1', 'Mia'), today)).toBe('Mia')
+  })
+
+  it('lists a person\'s children oldest first, unknown ages last', () => {
+    const all = [
+      child('c1', 'Unknown'),
+      child('c2', 'Younger', { born: '2021' }),
+      child('c3', 'Older', { born: '2017-06-01' }),
+      child('c4', 'Someone else\'s', { parentIds: ['priya'] }),
+    ]
+    expect(childrenOf(all, 'dave').map((c) => c.name)).toEqual(['Older', 'Younger', 'Unknown'])
   })
 })

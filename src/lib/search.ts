@@ -1,9 +1,10 @@
 import { relationsOf } from './links'
-import type { Fact, Link, MapEntry, Note, Person } from './model'
+import type { Child, Fact, Link, MapEntry, Note, Person } from './model'
 
 export interface SearchData {
   people: Person[]
   links: Link[]
+  children: Child[]
   facts: Fact[]
   notes: Note[]
   mapEntries: MapEntry[]
@@ -25,6 +26,9 @@ export function searchPeople(query: string, data: SearchData): Person[] {
   }
   for (const item of [...data.facts, ...data.notes, ...data.mapEntries]) {
     haystacks.get(item.personId)?.push(item.text)
+  }
+  for (const child of data.children) {
+    for (const parentId of child.parentIds) haystacks.get(parentId)?.push(child.name)
   }
   for (const person of data.people) {
     for (const relation of relationsOf(data.links, person.id)) {
