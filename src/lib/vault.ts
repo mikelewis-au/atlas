@@ -66,6 +66,8 @@ const BACKUP_APP_ID = 'atlas'
  */
 export class Vault {
   status: VaultStatus = 'locked'
+  /** Stored rows that could not be decrypted at the last unlock. */
+  unreadable = 0
   private db: PeopleDb
   private key: CryptoKey | null = null
   private records = new Map<string, AnyRecord>()
@@ -143,6 +145,15 @@ export class Vault {
     await this.load(raw)
   }
 
+  /** Re-wraps the data key, so no record needs re-encrypting. The recovery key stays valid. */
+  async changePassphrase(current: string, next: string): Promise<void> {
+    const meta = await this.requireMeta()
+    const raw = await unwrap(current, meta.passSalt, meta.iterations, meta.passWrap)
+    const passSalt = randomBytes(16)
+    const passWrap = await seal(await deriveKey(next, passSalt, meta.iterations), raw)
+    await this.db.meta.put({ key: 'vault', value: { ...meta, passSalt, passWrap } })
+  }
+
   private async requireMeta(): Promise<VaultMeta> {
     const meta = await this.readMeta()
     if (!meta) throw new Error('Vault is not set up')
@@ -151,12 +162,21 @@ export class Vault {
 
   private async load(raw: Bytes): Promise<void> {
     const key = await importDataKey(raw)
-    const rows = await this.db.records.toArray()
+    const rows = (await this.db.records.toArray()).filter((row) => !row.deleted)
+    const opened = await Promise.all(
+      rows.map(async (row) => {
+        try {
+          return await openJson<AnyRecord>(key, row)
+        } catch {
+          // The key is right (the wrap opened), so this row is damaged. Leaving it
+          // out keeps everything else reachable rather than refusing to unlock.
+          return undefined
+        }
+      }),
+    )
     const records = new Map<string, AnyRecord>()
-    for (const row of rows) {
-      if (row.deleted) continue
-      records.set(row.id, await openJson<AnyRecord>(key, row))
-    }
+    for (const record of opened) if (record) records.set(record.id, record)
+    this.unreadable = rows.length - records.size
     this.key = key
     this.records = records
     this.status = 'unlocked'
@@ -166,6 +186,7 @@ export class Vault {
   lock(): void {
     this.key = null
     this.records = new Map()
+    this.unreadable = 0
     this.status = 'locked'
     this.changed()
   }

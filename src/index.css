@@ -1,7 +1,12 @@
 @import 'tailwindcss';
 
+/* Set on html as well so the overscroll area matches the page in dark mode. */
+html,
 body {
   @apply bg-slate-50 text-slate-900 dark:bg-slate-900 dark:text-slate-100;
+}
+
+body {
   padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom)
     env(safe-area-inset-left);
 }

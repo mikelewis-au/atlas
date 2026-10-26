@@ -79,6 +79,12 @@ export function SensitiveToggle({
   )
 }
 
+/** For errors the app did not anticipate: shown rather than swallowed, so a failure is never silent. */
+export function describe(error: unknown): string {
+  const detail = error instanceof Error ? error.message : String(error)
+  return `Something went wrong: ${detail}`
+}
+
 export function SensitiveBadge() {
   return <span className="chip">Sensitive</span>
 }

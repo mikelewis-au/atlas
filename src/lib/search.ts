@@ -16,7 +16,7 @@ export interface SearchData {
  * half-remembered detail ("footy twins") or a child's name finds them.
  */
 export function searchPeople(query: string, data: SearchData): Person[] {
-  const words = query.toLowerCase().split(/\s+/).filter(Boolean)
+  const words = fold(query).split(/\s+/).filter(Boolean)
   if (words.length === 0) return []
   const names = new Map(data.people.map((person) => [person.id, person.name]))
 
@@ -38,7 +38,7 @@ export function searchPeople(query: string, data: SearchData): Person[] {
 
   return data.people
     .filter((person) => {
-      const haystack = haystacks.get(person.id)!.join('\n').toLowerCase()
+      const haystack = fold(haystacks.get(person.id)!.join('\n'))
       return words.every((word) => haystack.includes(singular(word)))
     })
     .sort((a, b) => a.name.localeCompare(b.name))
@@ -47,4 +47,9 @@ export function searchPeople(query: string, data: SearchData): Person[] {
 /** So "twins" finds a note that says "twin girls". */
 function singular(word: string): string {
   return word.length > 3 && word.endsWith('s') ? word.slice(0, -1) : word
+}
+
+/** Lower-cased with accents stripped, so "zoe" finds Zoë and "Zoë" finds zoe. */
+function fold(text: string): string {
+  return text.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase()
 }

@@ -81,6 +81,45 @@ describe('Vault', () => {
     expect(again.status).toBe('unlocked')
   })
 
+  it('changes the passphrase without touching the records or the recovery key', async () => {
+    const { vault, name, recoveryKey, dave } = await seeded()
+    await expect(vault.changePassphrase('not the passphrase', 'a new passphrase')).rejects.toBeInstanceOf(
+      WrongSecretError,
+    )
+    await vault.changePassphrase(PASSPHRASE, 'a new passphrase')
+    expect(vault.status).toBe('unlocked')
+
+    const reopened = open(name)
+    await reopened.init()
+    await expect(reopened.unlock(PASSPHRASE)).rejects.toBeInstanceOf(WrongSecretError)
+    await reopened.unlock('a new passphrase')
+    expect(reopened.get('person', dave.id)?.name).toBe('Dave Tester')
+
+    reopened.lock()
+    await reopened.recover(recoveryKey, 'yet another passphrase')
+    expect(reopened.status).toBe('unlocked')
+  })
+
+  it('still unlocks when one stored row is damaged, and counts it', async () => {
+    const { vault, name, dave } = await seeded()
+    const backup = JSON.parse(await vault.exportBackup())
+    const note = backup.records.find((row: { type: string }) => row.type === 'note')
+    note.ct = note.ct.slice(0, -8) + 'AAAAAAAA'
+
+    const damaged = open(freshName())
+    await damaged.init()
+    await damaged.importBackup(JSON.stringify(backup))
+    await damaged.unlock(PASSPHRASE)
+    expect(damaged.get('person', dave.id)?.name).toBe('Dave Tester')
+    expect(damaged.all('note')).toEqual([])
+    expect(damaged.unreadable).toBe(1)
+
+    const intact = open(name)
+    await intact.init()
+    await intact.unlock(PASSPHRASE)
+    expect(intact.unreadable).toBe(0)
+  })
+
   it('rejects a wrong recovery key', async () => {
     const { name } = await seeded()
     const reopened = open(name)

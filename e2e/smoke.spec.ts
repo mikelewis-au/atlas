@@ -97,3 +97,32 @@ test('work people stay off the personal side but search still finds them', async
     'true',
   )
 })
+
+test('the passphrase can be changed from settings', async ({ page }) => {
+  await page.goto('/')
+  await page.getByLabel('Passphrase', { exact: true }).fill(PASSPHRASE)
+  await page.getByLabel('Confirm passphrase').fill(PASSPHRASE)
+  await page.getByRole('button', { name: 'Create' }).click()
+  await page.getByRole('button', { name: "I've saved it" }).click()
+
+  await page.getByRole('link', { name: 'Settings' }).click()
+  await page.getByLabel('Current passphrase').fill('not it')
+  await page.getByLabel('New passphrase', { exact: true }).fill('a brand new passphrase')
+  await page.getByLabel('Confirm new passphrase').fill('a brand new passphrase')
+  await page.getByRole('button', { name: 'Change passphrase' }).click()
+  await expect(page.getByText('The current passphrase is wrong.')).toBeVisible()
+
+  await page.getByLabel('Current passphrase').fill(PASSPHRASE)
+  await page.getByLabel('New passphrase', { exact: true }).fill('a brand new passphrase')
+  await page.getByLabel('Confirm new passphrase').fill('a brand new passphrase')
+  await page.getByRole('button', { name: 'Change passphrase' }).click()
+  await expect(page.getByText('Passphrase changed.')).toBeVisible()
+
+  await page.reload()
+  await page.getByLabel('Passphrase').fill(PASSPHRASE)
+  await page.getByRole('button', { name: 'Unlock' }).click()
+  await expect(page.getByText('Wrong passphrase.')).toBeVisible()
+  await page.getByLabel('Passphrase').fill('a brand new passphrase')
+  await page.getByRole('button', { name: 'Unlock' }).click()
+  await expect(page.getByRole('heading', { name: 'Settings' })).toBeVisible()
+})

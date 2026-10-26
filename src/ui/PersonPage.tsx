@@ -213,7 +213,10 @@ function EditPerson({ person, onDone }: { person: Person; onDone: () => void }) 
           label="Delete person"
           confirmLabel="Tap again to delete everything about them"
           onConfirm={() => {
-            void deletePerson(vault, person.id).then(() => navigate('/'))
+            // Leave the page first: each removal re-renders it, and it would briefly show
+            // "no longer here" before the navigation.
+            void navigate('/')
+            void deletePerson(vault, person.id)
           }}
         />
         <button className="btn btn-primary">Save</button>
@@ -262,7 +265,9 @@ function Briefing({ person, relations }: { person: Person; relations: Relation[]
           <h2 className="section-title">Household</h2>
           <ul>
             {home.map((relation) => (
-              <RelationLine key={relation.link.id} relation={relation} />
+              <li key={relation.link.id}>
+                <RelationLine relation={relation} />
+              </li>
             ))}
           </ul>
           {kids.length > 0 && (
@@ -283,13 +288,13 @@ function RelationLine({ relation }: { relation: Relation }) {
   if (!other) return null
   const age = ageLabel(other.born)
   return (
-    <li>
+    <span>
       <Link to={`/person/${other.id}`} className="font-medium underline">
         {other.name}
       </Link>
       {age && <span className="ml-1">({age})</span>}
       <span className="muted ml-2">{relation.label}</span>
-    </li>
+    </span>
   )
 }
 
@@ -534,7 +539,7 @@ function Connections({ person, relations }: { person: Person; relations: Relatio
       <h2 className="section-title">Connections</h2>
       <ul className="flex flex-col gap-1">
         {relations.map((relation) => (
-          <div key={relation.link.id} className="flex items-start justify-between gap-2">
+          <li key={relation.link.id} className="flex items-start justify-between gap-2">
             <RelationLine relation={relation} />
             <span className="flex shrink-0 gap-3">
               {canEnd(relation.role) && (
@@ -556,7 +561,7 @@ function Connections({ person, relations }: { person: Person; relations: Relatio
                 Remove
               </button>
             </span>
-          </div>
+          </li>
         ))}
       </ul>
       <form onSubmit={add} className="flex flex-col gap-2">

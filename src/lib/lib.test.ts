@@ -187,6 +187,12 @@ describe('searchPeople', () => {
     expect(names('bakery')).toEqual(['Priya Shah'])
   })
 
+  it('ignores accents in either the query or the record', () => {
+    const accented = { ...data, people: [...people, person('zoe', 'Zoë Martín')] }
+    expect(searchPeople('zoe', accented).map((p) => p.name)).toEqual(['Zoë Martín'])
+    expect(searchPeople('Zoë martin', accented).map((p) => p.name)).toEqual(['Zoë Martín'])
+  })
+
   it('finds a parent by their child\'s name, and the child too', () => {
     expect(names('mia')).toEqual(['Dave Tester', 'Mia'])
   })

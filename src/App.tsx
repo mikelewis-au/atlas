@@ -1,7 +1,7 @@
 import { useEffect, useState, useSyncExternalStore } from 'react'
 import { HashRouter, Route, Routes } from 'react-router'
 import { Vault } from './lib/vault'
-import { VaultContext } from './ui/common'
+import { Page, VaultContext, describe } from './ui/common'
 import Home from './ui/Home'
 import Lock, { RecoveryKeyScreen } from './ui/Lock'
 import MapPage from './ui/MapPage'
@@ -13,11 +13,15 @@ const AUTO_LOCK_MS = 5 * 60 * 1000
 
 export default function App() {
   const [ready, setReady] = useState(false)
+  const [failure, setFailure] = useState('')
   const [recoveryKey, setRecoveryKey] = useState<string | null>(null)
   useSyncExternalStore(vault.subscribe, vault.getSnapshot)
 
   useEffect(() => {
-    void vault.init().then(() => setReady(true))
+    vault.init().then(
+      () => setReady(true),
+      (e: unknown) => setFailure(describe(e)),
+    )
   }, [])
 
   useEffect(() => {
@@ -32,6 +36,17 @@ export default function App() {
     return () => document.removeEventListener('visibilitychange', onVisibility)
   }, [])
 
+  if (failure) {
+    return (
+      <Page>
+        <p className="mt-10 text-red-600 dark:text-red-400">{failure}</p>
+        <p className="muted">
+          Atlas keeps its notes in this browser's storage, which could not be opened. Private
+          browsing windows often block it.
+        </p>
+      </Page>
+    )
+  }
   if (!ready) return null
   if (recoveryKey) {
     return <RecoveryKeyScreen recoveryKey={recoveryKey} onDone={() => setRecoveryKey(null)} />

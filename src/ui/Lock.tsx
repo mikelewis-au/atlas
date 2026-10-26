@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { BackupFormatError, MIN_PASSPHRASE_LENGTH, type Vault, WrongSecretError } from '../lib/vault'
-import { Page } from './common'
+import { Page, describe } from './common'
 
 type Mode = 'passphrase' | 'recover'
 
@@ -32,8 +32,11 @@ export default function Lock({ vault, onSetUp }: { vault: Vault; onSetUp: (key: 
       } else if (mode === 'recover') await vault.recover(recoveryKey, passphrase)
       else await vault.unlock(passphrase)
     } catch (e) {
-      if (!(e instanceof WrongSecretError)) throw e
-      setError(mode === 'recover' ? 'That recovery key is not right.' : 'Wrong passphrase.')
+      if (e instanceof WrongSecretError) {
+        setError(mode === 'recover' ? 'That recovery key is not right.' : 'Wrong passphrase.')
+      } else {
+        setError(describe(e))
+      }
     } finally {
       setBusy(false)
     }
@@ -45,10 +48,12 @@ export default function Lock({ vault, onSetUp }: { vault: Vault; onSetUp: (key: 
     try {
       await vault.importBackup(await file.text())
     } catch (e) {
-      if (!(e instanceof BackupFormatError)) throw e
-      setError('That file is not an Atlas backup.')
+      setError(e instanceof BackupFormatError ? 'That file is not an Atlas backup.' : describe(e))
     }
   }
+
+  const canSubmit =
+    !busy && passphrase.length > 0 && (mode !== 'recover' || recoveryKey.trim().length > 0)
 
   return (
     <Page>
@@ -104,8 +109,8 @@ export default function Lock({ vault, onSetUp }: { vault: Vault; onSetUp: (key: 
           </div>
         )}
         {error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
-        <button className="btn btn-primary" disabled={busy}>
-          {isNew ? 'Create' : mode === 'recover' ? 'Reset passphrase' : 'Unlock'}
+        <button className="btn btn-primary" disabled={!canSubmit}>
+          {busy ? 'Working…' : isNew ? 'Create' : mode === 'recover' ? 'Reset passphrase' : 'Unlock'}
         </button>
       </form>
 
