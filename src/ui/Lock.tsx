@@ -57,7 +57,8 @@ export default function Lock({ vault, onSetUp }: { vault: Vault; onSetUp: (key: 
 
   return (
     <Page>
-      <form onSubmit={submit} className="card mt-10 flex flex-col gap-3">
+      <h1 className="mt-10 text-2xl font-semibold">Atlas</h1>
+      <form onSubmit={submit} className="card flex flex-col gap-3">
         {isNew && (
           <p className="muted">
             Choose a passphrase. It encrypts everything on this device. If you forget it and lose
@@ -74,6 +75,7 @@ export default function Lock({ vault, onSetUp }: { vault: Vault; onSetUp: (key: 
               className="input font-mono"
               autoCapitalize="characters"
               autoComplete="off"
+              enterKeyHint="next"
               value={recoveryKey}
               onChange={(e) => setRecoveryKey(e.target.value)}
             />
@@ -88,6 +90,7 @@ export default function Lock({ vault, onSetUp }: { vault: Vault; onSetUp: (key: 
             type="password"
             className="input"
             autoComplete={choosing ? 'new-password' : 'current-password'}
+            enterKeyHint={choosing ? 'next' : 'go'}
             autoFocus
             value={passphrase}
             onChange={(e) => setPassphrase(e.target.value)}
@@ -103,6 +106,7 @@ export default function Lock({ vault, onSetUp }: { vault: Vault; onSetUp: (key: 
               type="password"
               className="input"
               autoComplete="new-password"
+              enterKeyHint="go"
               value={confirm}
               onChange={(e) => setConfirm(e.target.value)}
             />
@@ -117,7 +121,7 @@ export default function Lock({ vault, onSetUp }: { vault: Vault; onSetUp: (key: 
       {!isNew && (
         <button
           type="button"
-          className="muted underline"
+          className="textbtn self-start"
           onClick={() => {
             setMode(mode === 'recover' ? 'passphrase' : 'recover')
             setError('')
@@ -127,7 +131,7 @@ export default function Lock({ vault, onSetUp }: { vault: Vault; onSetUp: (key: 
         </button>
       )}
       {isNew && (
-        <label className="muted underline">
+        <label className="textbtn self-start">
           Restore from a backup file
           <input
             type="file"

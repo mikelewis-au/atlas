@@ -21,9 +21,12 @@ test('set up, record a person and a love map, and find it all after a restart', 
   await page.getByRole('button', { name: 'Add', exact: true }).click()
   await expect(page.getByRole('heading', { name: 'Dave Tester' })).toBeVisible()
 
-  await page.getByPlaceholder('What did you talk about?').fill('Starting a new job in March')
-  await page.getByRole('button', { name: 'Save note' }).click()
+  await page.getByPlaceholder('What did you talk about?').fill('Starting a new job in March. Is the commute ok?')
+  await expect(page.getByTestId('note-questions')).toContainText('Is the commute ok?')
+  await page.getByRole('button', { name: 'Save note and 1 thing to ask' }).click()
   await expect(page.getByTestId('briefing')).toContainText('Starting a new job in March')
+  await expect(page.getByTestId('loops')).toContainText('Is the commute ok?')
+  await expect(page.getByPlaceholder('What did you talk about?')).toHaveValue('')
 
   await page.getByRole('button', { name: '+ Add something to ask' }).click()
   await page.getByPlaceholder('e.g. How did the interview go?').fill('How is the new boss?')
@@ -34,7 +37,17 @@ test('set up, record a person and a love map, and find it all after a restart', 
   await page.getByTestId('loops').getByRole('button', { name: 'Save' }).click()
   await expect(page.getByTestId('loops')).toContainText('How is the new boss going?')
   await page.getByLabel('Done: How is the new boss going?').click()
+  await page.getByLabel('What they said').fill('Great, very hands off')
+  await page.getByRole('button', { name: 'Keep' }).click()
   await expect(page.getByTestId('loops')).toContainText('Done (1)')
+  await expect(page.getByTestId('facts')).toContainText('Great, very hands off')
+  await page.getByLabel('Done: Is the commute ok?').click()
+  await page.getByRole('button', { name: 'Skip' }).click()
+  await expect(page.getByTestId('loops')).toContainText('Done (2)')
+  // The add form stays open for the next entry and clears as soon as Add is tapped.
+  await page.getByPlaceholder('e.g. How did the interview go?').fill('How is the dog?')
+  await page.getByTestId('loops').getByRole('button', { name: 'Add', exact: true }).click()
+  await expect(page.getByPlaceholder('e.g. How did the interview go?')).toHaveValue('')
 
   await page.getByRole('button', { name: '+ Add a child' }).click()
   await page.getByLabel("Child's name").fill('Mia 2019')
@@ -55,15 +68,27 @@ test('set up, record a person and a love map, and find it all after a restart', 
   await page.getByLabel('Keep a love map').check()
   await page.getByRole('button', { name: 'Save', exact: true }).click()
   await page.getByRole('link', { name: 'Love map' }).click()
+  await expect(page.getByText('Start the map')).toBeVisible()
   await page.getByTestId('map-worries').getByRole('button', { name: '+ Add' }).click()
   await page.getByLabel('Add to Current worries').fill('The restructure at work')
   await page.getByTestId('map-worries').getByRole('button', { name: 'Add', exact: true }).click()
   await expect(page.getByTestId('map-worries')).toContainText('The restructure at work')
+  await expect(page.getByText('Still to map')).toBeVisible()
 
+  // Quizzed while only one section is filled, so the question is not left to chance.
   await page.getByRole('button', { name: 'Quiz me' }).click()
   await expect(page.getByText('What is Dave worried about right now?')).toBeVisible()
   await page.getByRole('button', { name: 'Reveal' }).click()
   await expect(page.getByText('The restructure at work')).toBeVisible()
+  await page.getByRole('button', { name: 'Close quiz' }).click()
+
+  await page.getByTestId('map-upcomingEvents').getByRole('button', { name: '+ Add' }).click()
+  await page.getByLabel('Add to Upcoming events').fill('Big presentation')
+  await page.getByTestId('map-upcomingEvents').getByRole('button', { name: 'Add', exact: true }).click()
+  await page.getByLabel('Happened: Big presentation').click()
+  await expect(page.getByTestId('map-recentEvents')).toContainText('Big presentation')
+  await page.getByRole('link', { name: '‹ Dave Tester' }).click()
+  await expect(page.getByTestId('on-their-mind')).toContainText('The restructure at work')
 
   await page.goto('/')
   await page.reload()
@@ -74,6 +99,7 @@ test('set up, record a person and a love map, and find it all after a restart', 
   await page.getByLabel('Passphrase').fill(PASSPHRASE)
   await page.getByRole('button', { name: 'Unlock' }).click()
 
+  await expect(page.getByRole('link', { name: /Dave Tester.*Ask.*How is the dog\?/ })).toBeVisible()
   await page.getByLabel('Search').fill('march job')
   await expect(page.getByRole('link', { name: /Dave Tester.*new job in March/ })).toBeVisible()
   await page.getByLabel('Search').fill('mia')

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { formatDate, todayIso } from '../lib/dates'
+import { todayIso, whenLabel } from '../lib/dates'
 import { BackupFormatError, MIN_PASSPHRASE_LENGTH, WrongSecretError } from '../lib/vault'
 import { BackLink, ConfirmButton, Page, describe, useVault } from './common'
 
@@ -62,7 +62,7 @@ export default function Settings() {
           Your notes live only on this device. A backup file is encrypted and needs your passphrase
           or recovery key to open.
         </p>
-        <p>Last backup: {lastExport ? formatDate(lastExport) : 'never'}</p>
+        <p>Last backup: {lastExport ? whenLabel(lastExport) : 'never'}</p>
         <button type="button" className="btn btn-primary" onClick={() => void backUp()}>
           Back up now
         </button>
@@ -176,6 +176,7 @@ function ChangePassphrase() {
           type="password"
           className="input"
           autoComplete="new-password"
+          enterKeyHint="go"
           value={confirm}
           onChange={(e) => setConfirm(e.target.value)}
         />

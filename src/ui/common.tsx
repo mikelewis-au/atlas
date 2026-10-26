@@ -2,11 +2,13 @@ import {
   createContext,
   useContext,
   useEffect,
+  useLayoutEffect,
+  useRef,
   useState,
   useSyncExternalStore,
   type ReactNode,
 } from 'react'
-import { Link, useNavigate } from 'react-router'
+import { Link, useLocation, useNavigate, useNavigationType } from 'react-router'
 import { ageLabel } from '../lib/dates'
 import type { Person } from '../lib/model'
 import type { Vault } from '../lib/vault'
@@ -22,7 +24,45 @@ export function useVault(): Vault {
 }
 
 export function Page({ children }: { children: ReactNode }) {
-  return <main className="mx-auto flex max-w-xl flex-col gap-4 px-4 pt-4 pb-16">{children}</main>
+  return <main className="mx-auto flex max-w-xl flex-col gap-4 px-4 pt-4 pb-24">{children}</main>
+}
+
+/** Back lands where the page was left; a new page starts at the top. Mount inside the router. */
+export function ScrollMemory() {
+  const location = useLocation()
+  const navigationType = useNavigationType()
+  const positions = useRef(new Map<string, number>())
+  useEffect(() => {
+    const remember = () => positions.current.set(location.key, window.scrollY)
+    window.addEventListener('scroll', remember, { passive: true })
+    return () => window.removeEventListener('scroll', remember)
+  }, [location.key])
+  useLayoutEffect(() => {
+    if (navigationType === 'POP') window.scrollTo(0, positions.current.get(location.key) ?? 0)
+    else if (navigationType === 'PUSH') window.scrollTo(0, 0)
+  }, [location.key, navigationType])
+  return null
+}
+
+/**
+ * Clears a form before the encrypted write finishes, so the next entry can start at once.
+ * A failed write calls `restore` and shows the error.
+ */
+export function useInstant(): {
+  error: string
+  run: (write: () => Promise<unknown>, restore?: () => void) => void
+} {
+  const [error, setError] = useState('')
+  return {
+    error,
+    run(write, restore) {
+      setError('')
+      write().catch((e: unknown) => {
+        restore?.()
+        setError(describe(e))
+      })
+    },
+  }
 }
 
 /** Goes back through history when the app got here from another of its own pages. */
@@ -31,7 +71,7 @@ export function BackLink({ to, label = 'Back' }: { to: string; label?: string })
   return (
     <Link
       to={to}
-      className="muted self-start underline"
+      className="textbtn self-start"
       onClick={(event) => {
         if (window.history.state?.idx > 0) {
           event.preventDefault()
@@ -44,7 +84,18 @@ export function BackLink({ to, label = 'Back' }: { to: string; label?: string })
   )
 }
 
-export function PersonRow({ person, badge, snippet }: { person: Person; badge?: string; snippet?: string }) {
+export function PersonRow({
+  person,
+  badge,
+  snippet,
+  hint,
+}: {
+  person: Person
+  badge?: string
+  snippet?: string
+  /** The next thing to ask them, shown so the list reads as a brief. */
+  hint?: string
+}) {
   const age = ageLabel(person.born)
   return (
     <Link to={`/person/${person.id}`} className="card flex flex-col gap-1">
@@ -57,6 +108,12 @@ export function PersonRow({ person, badge, snippet }: { person: Person; badge?: 
         <span className="muted truncate">{person.howIKnow}</span>
       </span>
       {snippet && <span className="muted line-clamp-2">{snippet}</span>}
+      {hint && (
+        <span className="muted line-clamp-1">
+          <span className="mr-1.5 text-xs font-semibold tracking-wide uppercase">Ask</span>
+          {hint}
+        </span>
+      )}
     </Link>
   )
 }
@@ -104,7 +161,7 @@ export function Reveal({
   const [open, setOpen] = useState(false)
   if (!open) {
     return (
-      <button type="button" className="muted self-start underline" onClick={() => setOpen(true)}>
+      <button type="button" className="textbtn self-start" onClick={() => setOpen(true)}>
         + {label}
       </button>
     )
@@ -158,6 +215,7 @@ export function Editable({
       <input
         className="input"
         aria-label={`Edit: ${text}`}
+        enterKeyHint="done"
         autoFocus
         value={draft}
         onChange={(e) => setDraft(e.target.value)}
@@ -166,11 +224,11 @@ export function Editable({
         <ConfirmButton
           label={deleteLabel}
           confirmLabel="Tap again"
-          className="text-sm text-red-600 underline dark:text-red-400"
+          className="textbtn textbtn-danger"
           onConfirm={onDelete}
         />
         <span className="flex gap-3">
-          <button type="button" className="muted underline" onClick={() => setEditing(false)}>
+          <button type="button" className="textbtn" onClick={() => setEditing(false)}>
             Cancel
           </button>
           <button className="btn btn-primary py-1" disabled={!draft.trim()}>
@@ -190,8 +248,8 @@ export function SensitiveToggle({
   onChange: (checked: boolean) => void
 }) {
   return (
-    <label className="muted flex items-center gap-2">
-      <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} />
+    <label className="muted -my-1.5 flex min-h-11 items-center gap-2">
+      <input type="checkbox" className="size-4" checked={checked} onChange={(e) => onChange(e.target.checked)} />
       Sensitive
     </label>
   )

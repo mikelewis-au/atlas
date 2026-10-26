@@ -37,6 +37,13 @@ body {
   .muted {
     @apply text-sm text-slate-500 dark:text-slate-400;
   }
+  /* A link-styled button with a thumb-sized hit area; the negative margin keeps the line spacing of plain text. */
+  .textbtn {
+    @apply -my-1.5 inline-flex min-h-11 items-center text-sm text-slate-500 underline active:opacity-70 dark:text-slate-400;
+  }
+  .textbtn-danger {
+    @apply text-red-600 dark:text-red-400;
+  }
   .section-title {
     @apply mb-2 text-xs font-semibold tracking-wide text-slate-500 uppercase dark:text-slate-400;
   }

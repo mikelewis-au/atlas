@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import { childLabel, childrenOf, parseChild } from './children'
 import { newRecoveryKey, normaliseRecoveryKey } from './crypto'
-import { ageLabel, parseBorn, todayIso } from './dates'
+import { ageLabel, parseBorn, todayIso, whenLabel } from './dates'
 import { canEnd, household, linkExists, linkFor, relationsOf, roleOf } from './links'
-import type { Child, Fact, Link, MapEntry, Note, Person } from './model'
+import { mapHighlights } from './map'
+import type { Child, Fact, Link, MapEntry, Note, OpenLoop, Person } from './model'
+import { openLoops, questionsIn } from './people'
 import { searchMatches, searchPeople } from './search'
 import { inSide } from './space'
 
@@ -286,5 +288,104 @@ describe('children kept as names', () => {
       child('c4', 'Someone else\'s', { parentIds: ['priya'] }),
     ]
     expect(childrenOf(all, 'dave').map((c) => c.name)).toEqual(['Older', 'Younger', 'Unknown'])
+  })
+})
+
+describe('whenLabel', () => {
+  const today = new Date(2026, 9, 26)
+  const label = (iso: string) => whenLabel(iso, today)
+
+  it('names the nearest days', () => {
+    expect(label('2026-10-26')).toBe('Today')
+    expect(label('2026-10-25')).toBe('Yesterday')
+    expect(label('2026-10-27')).toBe('Tomorrow')
+  })
+
+  it('counts days under a week and weeks after that', () => {
+    expect(label('2026-10-23')).toBe('3 days ago')
+    expect(label('2026-10-12')).toBe('2 weeks ago')
+    expect(label('2026-10-31')).toBe('In 5 days')
+    expect(label('2026-11-09')).toBe('In 2 weeks')
+    expect(label('2026-11-02')).toBe('In 1 week')
+  })
+
+  it('falls back to the date beyond two months', () => {
+    expect(label('2026-07-01')).toMatch(/^1 Jul\w* 2026$/)
+    expect(label('2027-02-01')).toMatch(/^1 Feb\w* 2027$/)
+  })
+
+  it('reads a timestamp in local time', () => {
+    expect(label(new Date(2026, 9, 26, 23, 59).toISOString())).toBe('Today')
+  })
+})
+
+describe('openLoops', () => {
+  const loop = (id: string, extra: Partial<OpenLoop>): OpenLoop => ({
+    ...base,
+    type: 'loop',
+    id,
+    personId: 'dave',
+    text: id,
+    status: 'open',
+    ...extra,
+  })
+
+  it('puts dated loops first by date, then the rest oldest first', () => {
+    const loops = [
+      loop('later', { createdAt: '2026-02-01T00:00:00.000Z' }),
+      loop('soon', { dueDate: '2026-11-01' }),
+      loop('closed', { status: 'closed', dueDate: '2026-10-01' }),
+      loop('other', { personId: 'priya', dueDate: '2026-10-01' }),
+      loop('earlier', { createdAt: '2026-01-01T00:00:00.000Z' }),
+      loop('sooner', { dueDate: '2026-10-28' }),
+    ]
+    expect(openLoops(loops, 'dave').map((l) => l.id)).toEqual(['sooner', 'soon', 'earlier', 'later'])
+  })
+})
+
+describe('questionsIn', () => {
+  it('picks the questions out of a dictated paragraph', () => {
+    expect(
+      questionsIn('Long chat at training. His dad had a fall. How is his dad after the fall? They might go to Japan. Did they book the trip?'),
+    ).toEqual(['How is his dad after the fall?', 'Did they book the trip?'])
+  })
+
+  it('takes a question on its own line and ignores duplicates and bare marks', () => {
+    expect(questionsIn('Nervous about work\nHow did the interview go?\nHow did the interview go?\n?')).toEqual([
+      'How did the interview go?',
+    ])
+  })
+
+  it('finds nothing in a note with no questions', () => {
+    expect(questionsIn('Starting a new job in March.')).toEqual([])
+  })
+})
+
+describe('mapHighlights', () => {
+  const entry = (id: string, section: MapEntry['section'], extra: Partial<MapEntry> = {}): MapEntry => ({
+    ...base,
+    type: 'mapEntry',
+    id,
+    personId: 'jess',
+    section,
+    text: id,
+    date: '2026-10-01',
+    status: 'current',
+    sensitive: false,
+    ...extra,
+  })
+
+  it('keeps current stresses, worries and upcoming events, newest first, at most five', () => {
+    const entries = [
+      entry('old-worry', 'worries', { createdAt: '2026-01-01T00:00:00.000Z' }),
+      entry('hope', 'hopes'),
+      entry('resolved', 'stresses', { status: 'resolved' }),
+      entry('stress', 'stresses', { createdAt: '2026-03-01T00:00:00.000Z' }),
+      entry('event', 'upcomingEvents', { createdAt: '2026-02-01T00:00:00.000Z' }),
+      entry('w1', 'worries', { createdAt: '2026-04-01T00:00:00.000Z' }),
+      entry('w2', 'worries', { createdAt: '2026-05-01T00:00:00.000Z' }),
+      entry('w3', 'worries', { createdAt: '2026-06-01T00:00:00.000Z' }),
+    ]
+    expect(mapHighlights(entries).map((e) => e.id)).toEqual(['w3', 'w2', 'w1', 'stress', 'event'])
   })
 })

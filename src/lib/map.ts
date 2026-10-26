@@ -1,4 +1,4 @@
-import type { MapSection } from './model'
+import type { MapEntry, MapSection } from './model'
 
 export interface SectionInfo {
   id: MapSection
@@ -54,4 +54,15 @@ export const MAP_SECTIONS: SectionInfo[] = [
 
 export function sectionInfo(id: MapSection): SectionInfo {
   return MAP_SECTIONS.find((section) => section.id === id)!
+}
+
+const HIGHLIGHT_SECTIONS: MapSection[] = ['stresses', 'worries', 'upcomingEvents']
+const HIGHLIGHT_LIMIT = 5
+
+/** What is on their mind right now: the pressing sections of the map, newest first. */
+export function mapHighlights(entries: MapEntry[]): MapEntry[] {
+  return entries
+    .filter((entry) => entry.status === 'current' && HIGHLIGHT_SECTIONS.includes(entry.section))
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+    .slice(0, HIGHLIGHT_LIMIT)
 }

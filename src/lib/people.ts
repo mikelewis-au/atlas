@@ -1,6 +1,6 @@
 import { shareChildren } from './children'
 import { type Role, linkExists, linkFor } from './links'
-import type { Note, Person } from './model'
+import type { Note, OpenLoop, Person } from './model'
 import { type Side, inSide } from './space'
 import type { Vault } from './vault'
 
@@ -58,4 +58,27 @@ export async function deletePerson(vault: Vault, personId: string): Promise<void
     }
   }
   await vault.remove(personId)
+}
+
+/** Open loops for one person, soonest due first, then oldest first. */
+export function openLoops(loops: OpenLoop[], personId: string): OpenLoop[] {
+  return loops
+    .filter((loop) => loop.personId === personId && loop.status === 'open')
+    .sort(
+      (a, b) =>
+        (a.dueDate ?? '9999').localeCompare(b.dueDate ?? '9999') ||
+        a.createdAt.localeCompare(b.createdAt),
+    )
+}
+
+/**
+ * The questions in a note, so "How is his dad after the fall?" dictated into a
+ * note can become something to ask without typing it twice.
+ */
+export function questionsIn(text: string): string[] {
+  const questions = text.match(/[^.!?\n]+\?/g) ?? []
+  const seen = new Set<string>()
+  return questions
+    .map((question) => question.trim())
+    .filter((question) => question.length > 1 && !seen.has(question) && seen.add(question))
 }

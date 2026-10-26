@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router'
-import { recentPeople } from '../lib/people'
+import { openLoops, recentPeople } from '../lib/people'
 import { searchMatches } from '../lib/search'
+import type { Person } from '../lib/model'
 import { SIDES, SIDE_LABELS, type Side, inSide, loadSide, saveSide } from '../lib/space'
 import { ErrorText, Page, PersonRow, Reveal, useVault } from './common'
 
@@ -27,6 +28,8 @@ export default function Home() {
   const circle = people.filter((person) => person.circle)
   const satellites = people.filter((person) => !person.circle)
   const recent = recentPeople(vault, 5, side).filter((person) => !person.pinned)
+  const loops = vault.all('loop')
+  const nextToAsk = (person: Person) => openLoops(loops, person.id)[0]?.text
   const typedName = query.trim()
   const alreadyNamed = matches.some(
     (match) => match.person.name.toLowerCase() === typedName.toLowerCase(),
@@ -70,6 +73,7 @@ export default function Home() {
         className="input"
         placeholder="Search, or type a name to add"
         aria-label="Search"
+        enterKeyHint="search"
         value={query}
         onChange={(e) => setQuery(e.target.value)}
       />
@@ -109,7 +113,7 @@ export default function Home() {
             <section className="flex flex-col gap-2">
               <h2 className="section-title">Pinned</h2>
               {pinned.map((person) => (
-                <PersonRow key={person.id} person={person} />
+                <PersonRow key={person.id} person={person} hint={nextToAsk(person)} />
               ))}
             </section>
           )}
@@ -118,7 +122,7 @@ export default function Home() {
             <section className="flex flex-col gap-2">
               <h2 className="section-title">Recent</h2>
               {recent.map((person) => (
-                <PersonRow key={person.id} person={person} />
+                <PersonRow key={person.id} person={person} hint={nextToAsk(person)} />
               ))}
             </section>
           )}
@@ -208,7 +212,7 @@ function AddPerson({ side, name: fixedName, onDone }: { side: Side; name?: strin
       {error && <ErrorText>{error}</ErrorText>}
       <div className="flex justify-between gap-2">
         {onDone ? (
-          <button type="button" className="muted underline" onClick={onDone}>
+          <button type="button" className="textbtn" onClick={onDone}>
             Cancel
           </button>
         ) : (

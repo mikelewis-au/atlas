@@ -1,17 +1,19 @@
 import { useState } from 'react'
 import { Link, useParams } from 'react-router'
 import { childLabel, childrenOf } from '../lib/children'
-import { formatDate, todayIso } from '../lib/dates'
+import { formatDate, todayIso, whenLabel } from '../lib/dates'
 import { relationsOf } from '../lib/links'
 import { MAP_SECTIONS, type SectionInfo, sectionInfo } from '../lib/map'
 import type { MapEntry, MapSection, Person, Question } from '../lib/model'
 import {
   BackLink,
   Editable,
+  ErrorText,
   Page,
   Reveal,
   SensitiveBadge,
   SensitiveToggle,
+  useInstant,
   useVault,
 } from './common'
 
@@ -35,6 +37,8 @@ export default function MapPage() {
   const past = entries
     .filter((entry) => entry.status === 'resolved')
     .sort((a, b) => (b.resolvedAt ?? '').localeCompare(a.resolvedAt ?? ''))
+  const filled = MAP_SECTIONS.filter((section) => current.some((entry) => entry.section === section.id))
+  const empty = MAP_SECTIONS.filter((section) => !filled.includes(section))
 
   return (
     <Page>
@@ -56,7 +60,7 @@ export default function MapPage() {
       ) : (
         <>
           <Cast person={person} />
-          {MAP_SECTIONS.map((section) => (
+          {filled.map((section) => (
             <Section
               key={section.id}
               section={section}
@@ -64,6 +68,14 @@ export default function MapPage() {
               entries={current.filter((entry) => entry.section === section.id)}
             />
           ))}
+          {empty.length > 0 && (
+            <section className="card flex flex-col gap-2">
+              <h2 className="section-title">{filled.length === 0 ? 'Start the map' : 'Still to map'}</h2>
+              {empty.map((section) => (
+                <EmptySection key={section.id} section={section} personId={person.id} />
+              ))}
+            </section>
+          )}
           <Questions personId={person.id} />
           {past.length > 0 && (
             <details className="card">
@@ -80,7 +92,7 @@ export default function MapPage() {
                     </span>
                     <button
                       type="button"
-                      className="muted shrink-0 underline"
+                      className="textbtn shrink-0"
                       onClick={() =>
                         void vault.update('mapEntry', entry.id, {
                           status: 'current',
@@ -142,6 +154,81 @@ function Cast({ person }: { person: Person }) {
   )
 }
 
+/** The add form shared by full and empty sections; stays open for the next entry. */
+function AddEntry({
+  section,
+  personId,
+  onClose,
+}: {
+  section: SectionInfo
+  personId: string
+  onClose: () => void
+}) {
+  const vault = useVault()
+  const [text, setText] = useState('')
+  const [sensitive, setSensitive] = useState(false)
+  const { error, run } = useInstant()
+
+  function add(event: React.FormEvent) {
+    event.preventDefault()
+    const entry = { text: text.trim(), sensitive }
+    if (!entry.text) return
+    setText('')
+    setSensitive(false)
+    run(
+      () =>
+        vault.create('mapEntry', {
+          personId,
+          section: section.id,
+          ...entry,
+          date: todayIso(),
+          status: 'current',
+        }),
+      () => {
+        setText(entry.text)
+        setSensitive(entry.sensitive)
+      },
+    )
+  }
+
+  return (
+    <form onSubmit={add} className="flex flex-col gap-2">
+      <input
+        className="input"
+        placeholder={section.placeholder}
+        aria-label={`Add to ${section.title}`}
+        autoFocus
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+      />
+      {error && <ErrorText>{error}</ErrorText>}
+      <div className="flex items-center justify-between gap-2">
+        <SensitiveToggle checked={sensitive} onChange={setSensitive} />
+        <span className="flex items-center gap-3">
+          <button type="button" className="textbtn" onClick={onClose}>
+            Done
+          </button>
+          <button className="btn" disabled={!text.trim()}>
+            Add
+          </button>
+        </span>
+      </div>
+    </form>
+  )
+}
+
+/** A section with nothing in it yet takes one line, not a card. */
+function EmptySection({ section, personId }: { section: SectionInfo; personId: string }) {
+  return (
+    <div className="flex flex-col gap-1" data-testid={`map-${section.id}`}>
+      <div className="flex items-center justify-between gap-3">
+        <span>{section.title}</span>
+        <Reveal label="Add">{(close) => <AddEntry section={section} personId={personId} onClose={close} />}</Reveal>
+      </div>
+    </div>
+  )
+}
+
 function Section({
   section,
   personId,
@@ -152,28 +239,10 @@ function Section({
   entries: MapEntry[]
 }) {
   const vault = useVault()
-  const [text, setText] = useState('')
-  const [sensitive, setSensitive] = useState(false)
-
-  async function add(event: React.FormEvent) {
-    event.preventDefault()
-    if (!text.trim()) return
-    await vault.create('mapEntry', {
-      personId,
-      section: section.id,
-      text: text.trim(),
-      date: todayIso(),
-      status: 'current',
-      sensitive,
-    })
-    setText('')
-    setSensitive(false)
-  }
 
   return (
     <section className="card flex flex-col gap-2" data-testid={`map-${section.id}`}>
       <h2 className="section-title">{section.title}</h2>
-      {entries.length === 0 && <p className="muted">{section.placeholder}.</p>}
       {[...entries]
         .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
         .map((entry) => (
@@ -186,7 +255,7 @@ function Section({
               >
                 <span className="block whitespace-pre-wrap">{entry.text}</span>
                 <span className="muted">
-                  {formatDate(entry.date)}
+                  {whenLabel(entry.date)}
                   {entry.sensitive && (
                     <span className="ml-2">
                       <SensitiveBadge />
@@ -195,46 +264,39 @@ function Section({
                 </span>
               </Editable>
             </div>
-            <button
-              type="button"
-              className="muted mt-0.5 shrink-0 underline"
-              aria-label={`Done: ${entry.text}`}
-              onClick={() =>
-                void vault.update('mapEntry', entry.id, {
-                  status: 'resolved',
-                  resolvedAt: todayIso(),
-                })
-              }
-            >
-              Done
-            </button>
+            <span className="flex shrink-0 gap-3">
+              {section.id === 'upcomingEvents' && (
+                <button
+                  type="button"
+                  className="textbtn"
+                  aria-label={`Happened: ${entry.text}`}
+                  onClick={() =>
+                    void vault.update('mapEntry', entry.id, {
+                      section: 'recentEvents',
+                      date: todayIso(),
+                    })
+                  }
+                >
+                  Happened
+                </button>
+              )}
+              <button
+                type="button"
+                className="textbtn"
+                aria-label={`Done: ${entry.text}`}
+                onClick={() =>
+                  void vault.update('mapEntry', entry.id, {
+                    status: 'resolved',
+                    resolvedAt: todayIso(),
+                  })
+                }
+              >
+                Done
+              </button>
+            </span>
           </div>
         ))}
-      <Reveal label="Add">
-        {(close) => (
-          <form onSubmit={add} className="flex flex-col gap-2">
-            <input
-              className="input"
-              placeholder={section.placeholder}
-              aria-label={`Add to ${section.title}`}
-              autoFocus
-              value={text}
-              onChange={(e) => setText(e.target.value)}
-            />
-            <div className="flex items-center justify-between gap-2">
-              <SensitiveToggle checked={sensitive} onChange={setSensitive} />
-              <span className="flex items-center gap-3">
-                <button type="button" className="muted underline" onClick={close}>
-                  Done
-                </button>
-                <button className="btn" disabled={!text.trim()}>
-                  Add
-                </button>
-              </span>
-            </div>
-          </form>
-        )}
-      </Reveal>
+      <Reveal label="Add">{(close) => <AddEntry section={section} personId={personId} onClose={close} />}</Reveal>
     </section>
   )
 }
@@ -243,16 +305,21 @@ function Questions({ personId }: { personId: string }) {
   const vault = useVault()
   const [text, setText] = useState('')
   const [section, setSection] = useState<MapSection>('hopes')
+  const { error, run } = useInstant()
   const questions = vault
     .all('question')
     .filter((question) => question.personId === personId && question.status === 'toAsk')
     .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
 
-  async function add(event: React.FormEvent) {
+  function add(event: React.FormEvent) {
     event.preventDefault()
-    if (!text.trim()) return
-    await vault.create('question', { personId, text: text.trim(), section, status: 'toAsk' })
+    const entry = text.trim()
+    if (!entry) return
     setText('')
+    run(
+      () => vault.create('question', { personId, text: entry, section, status: 'toAsk' }),
+      () => setText(entry),
+    )
   }
 
   return (
@@ -264,6 +331,7 @@ function Questions({ personId }: { personId: string }) {
       {questions.map((question) => (
         <QuestionItem key={question.id} question={question} />
       ))}
+      {error && <ErrorText>{error}</ErrorText>}
       <Reveal label="Add a question">
         {(close) => (
           <form onSubmit={add} className="flex flex-col gap-2">
@@ -290,7 +358,7 @@ function Questions({ personId }: { personId: string }) {
               <button className="btn shrink-0" disabled={!text.trim()}>
                 Add
               </button>
-              <button type="button" className="muted shrink-0 underline" onClick={close}>
+              <button type="button" className="textbtn shrink-0" onClick={close}>
                 Done
               </button>
             </div>
@@ -347,7 +415,7 @@ function QuestionItem({ question }: { question: Question }) {
           </button>
         </form>
       ) : (
-        <button type="button" className="muted self-start underline" onClick={() => setAnswering(true)}>
+        <button type="button" className="textbtn self-start" onClick={() => setAnswering(true)}>
           Log the answer
         </button>
       )}

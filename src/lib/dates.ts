@@ -4,9 +4,13 @@ export function todayIso(now = new Date()): string {
   return `${now.getFullYear()}-${month}-${day}`
 }
 
-export function formatDate(iso: string): string {
+function localDate(iso: string): Date {
   const [year, month, day] = iso.slice(0, 10).split('-').map(Number)
-  return new Date(year, month - 1, day).toLocaleDateString('en-AU', {
+  return new Date(year, month - 1, day)
+}
+
+export function formatDate(iso: string): string {
+  return localDate(iso).toLocaleDateString('en-AU', {
     day: 'numeric',
     month: 'short',
     year: 'numeric',
@@ -33,4 +37,24 @@ export function ageLabel(born: string | undefined, today = new Date()): string |
     today.getMonth() + 1 > month || (today.getMonth() + 1 === month && today.getDate() >= day)
   if (!birthdayPassed) age--
   return age >= 0 ? String(age) : undefined
+}
+
+const DAY_MS = 24 * 60 * 60 * 1000
+const RELATIVE_LIMIT_DAYS = 60
+
+/** "Today", "3 weeks ago" or "In 2 days" while it is close, the plain date once it is not. */
+export function whenLabel(iso: string, today = new Date()): string {
+  // A timestamp is read in local time; a plain date already is one.
+  const then = iso.includes('T') ? new Date(iso) : localDate(iso)
+  then.setHours(0, 0, 0, 0)
+  const now = new Date(today.getFullYear(), today.getMonth(), today.getDate())
+  const days = Math.round((then.getTime() - now.getTime()) / DAY_MS)
+  if (Math.abs(days) > RELATIVE_LIMIT_DAYS) return formatDate(todayIso(then))
+  if (days === 0) return 'Today'
+  if (days === 1) return 'Tomorrow'
+  if (days === -1) return 'Yesterday'
+  const count = Math.abs(days) < 7 ? Math.abs(days) : Math.round(Math.abs(days) / 7)
+  const unit = Math.abs(days) < 7 ? 'day' : 'week'
+  const span = `${count} ${unit}${count === 1 ? '' : 's'}`
+  return days > 0 ? `In ${span}` : `${span} ago`
 }

@@ -1,7 +1,7 @@
 import { useEffect, useState, useSyncExternalStore } from 'react'
 import { HashRouter, Route, Routes } from 'react-router'
 import { Vault } from './lib/vault'
-import { Page, VaultContext, describe } from './ui/common'
+import { Page, ScrollMemory, VaultContext, describe } from './ui/common'
 import Home from './ui/Home'
 import Lock, { RecoveryKeyScreen } from './ui/Lock'
 import MapPage from './ui/MapPage'
@@ -62,6 +62,7 @@ export default function App() {
           <Route path="/person/:id/map" element={<MapPage />} />
           <Route path="/settings" element={<Settings />} />
         </Routes>
+        <ScrollMemory />
       </HashRouter>
     </VaultContext.Provider>
   )
