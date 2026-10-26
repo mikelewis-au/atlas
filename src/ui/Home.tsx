@@ -1,21 +1,19 @@
 import { useState } from 'react'
-import { Link, useNavigate } from 'react-router'
+import { Link, useNavigate, useSearchParams } from 'react-router'
 import { recentPeople } from '../lib/people'
-import { searchPeople } from '../lib/search'
+import { searchMatches } from '../lib/search'
 import { SIDES, SIDE_LABELS, type Side, inSide, loadSide, saveSide } from '../lib/space'
-import { Page, PersonRow, useVault } from './common'
+import { ErrorText, Page, PersonRow, Reveal, useVault } from './common'
 
 export default function Home() {
   const vault = useVault()
-  const navigate = useNavigate()
+  const [params, setParams] = useSearchParams()
   const [side, setSide] = useState<Side>(loadSide)
-  const [query, setQuery] = useState('')
-  const [name, setName] = useState('')
-  const [context, setContext] = useState('')
+  const query = params.get('q') ?? ''
 
   const everyone = vault.all('person').sort((a, b) => a.name.localeCompare(b.name))
   // Search covers both sides: its job is finding someone half remembered.
-  const results = searchPeople(query, {
+  const matches = searchMatches(query, {
     people: everyone,
     links: vault.all('link'),
     children: vault.all('child'),
@@ -28,23 +26,19 @@ export default function Home() {
   const pinned = people.filter((person) => person.pinned)
   const circle = people.filter((person) => person.circle)
   const satellites = people.filter((person) => !person.circle)
+  const recent = recentPeople(vault, 5, side).filter((person) => !person.pinned)
+  const typedName = query.trim()
+  const alreadyNamed = matches.some(
+    (match) => match.person.name.toLowerCase() === typedName.toLowerCase(),
+  )
 
   function chooseSide(next: Side) {
     setSide(next)
     saveSide(next)
   }
 
-  async function quickAdd(event: React.FormEvent) {
-    event.preventDefault()
-    if (!name.trim()) return
-    const person = await vault.create('person', {
-      name: name.trim(),
-      howIKnow: context.trim() || undefined,
-      circle: true,
-      space: side,
-      tags: [],
-    })
-    void navigate(`/person/${person.id}`)
+  function setQuery(next: string) {
+    setParams(next ? { q: next } : {}, { replace: true })
   }
 
   return (
@@ -74,42 +68,42 @@ export default function Home() {
       <input
         type="search"
         className="input"
-        placeholder="Search names, tags, anything you noted"
+        placeholder="Search, or type a name to add"
+        aria-label="Search"
         value={query}
         onChange={(e) => setQuery(e.target.value)}
       />
 
-      {query.trim() ? (
+      {typedName ? (
         <section className="flex flex-col gap-2">
-          {results.length === 0 && <p className="muted">No one matches.</p>}
-          {results.map((person) => (
+          {matches.map((match) => (
             <PersonRow
-              key={person.id}
-              person={person}
-              badge={inSide(person, side) ? undefined : SIDE_LABELS[otherSide]}
+              key={match.person.id}
+              person={match.person}
+              snippet={match.snippet}
+              badge={inSide(match.person, side) ? undefined : SIDE_LABELS[otherSide]}
             />
           ))}
+          {matches.length === 0 ? (
+            <>
+              <p className="muted">No one matches.</p>
+              <AddPerson side={side} name={typedName} />
+            </>
+          ) : (
+            !alreadyNamed && (
+              <Reveal label={`Add “${typedName}” as someone new`}>
+                {() => <AddPerson side={side} name={typedName} />}
+              </Reveal>
+            )
+          )}
         </section>
       ) : (
         <>
-          <form onSubmit={quickAdd} className="card flex flex-col gap-2">
-            <h2 className="section-title">Add someone to {SIDE_LABELS[side].toLowerCase()}</h2>
-            <input
-              className="input"
-              placeholder="Name"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-            />
-            <input
-              className="input"
-              placeholder="How you know them"
-              value={context}
-              onChange={(e) => setContext(e.target.value)}
-            />
-            <button className="btn btn-primary" disabled={!name.trim()}>
-              Add
-            </button>
-          </form>
+          {people.length === 0 && (
+            <p className="muted">
+              No one here yet. Type a name above to add someone to {SIDE_LABELS[side].toLowerCase()}.
+            </p>
+          )}
 
           {pinned.length > 0 && (
             <section className="flex flex-col gap-2">
@@ -120,16 +114,22 @@ export default function Home() {
             </section>
           )}
 
-          {circle.length > 0 && (
+          {recent.length > 0 && (
             <section className="flex flex-col gap-2">
               <h2 className="section-title">Recent</h2>
-              {recentPeople(vault, 5, side).map((person) => (
+              {recent.map((person) => (
                 <PersonRow key={person.id} person={person} />
               ))}
             </section>
           )}
 
-          {circle.length > 5 && (
+          {people.length > 0 && (
+            <Reveal label="Add someone">
+              {(close) => <AddPerson side={side} onDone={close} />}
+            </Reveal>
+          )}
+
+          {circle.length > recent.length + pinned.length && (
             <details>
               <summary className="section-title cursor-pointer">
                 Everyone in {SIDE_LABELS[side].toLowerCase()} ({circle.length})
@@ -157,5 +157,67 @@ export default function Home() {
         </>
       )}
     </Page>
+  )
+}
+
+/** Five-second quick add: a name, optionally one line of context, straight to their page. */
+function AddPerson({ side, name: fixedName, onDone }: { side: Side; name?: string; onDone?: () => void }) {
+  const vault = useVault()
+  const navigate = useNavigate()
+  const [, setParams] = useSearchParams()
+  const [name, setName] = useState(fixedName ?? '')
+  const [context, setContext] = useState('')
+  const [error, setError] = useState('')
+  const finalName = (fixedName ?? name).trim()
+
+  async function add(event: React.FormEvent) {
+    event.preventDefault()
+    if (!finalName) return setError('A name is needed.')
+    const person = await vault.create('person', {
+      name: finalName,
+      howIKnow: context.trim() || undefined,
+      circle: true,
+      space: side,
+      tags: [],
+    })
+    // Coming back should land on the list, not on a search for the name just added.
+    setParams({}, { replace: true })
+    void navigate(`/person/${person.id}`)
+  }
+
+  return (
+    <form onSubmit={add} className="card flex flex-col gap-2">
+      <h2 className="section-title">
+        {fixedName ? `Add “${fixedName}” to ${SIDE_LABELS[side].toLowerCase()}` : `Add someone to ${SIDE_LABELS[side].toLowerCase()}`}
+      </h2>
+      {!fixedName && (
+        <input
+          className="input"
+          placeholder="Name"
+          autoFocus
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+        />
+      )}
+      <input
+        className="input"
+        placeholder="How you know them"
+        value={context}
+        onChange={(e) => setContext(e.target.value)}
+      />
+      {error && <ErrorText>{error}</ErrorText>}
+      <div className="flex justify-between gap-2">
+        {onDone ? (
+          <button type="button" className="muted underline" onClick={onDone}>
+            Cancel
+          </button>
+        ) : (
+          <span />
+        )}
+        <button className="btn btn-primary" disabled={!finalName}>
+          Add
+        </button>
+      </div>
+    </form>
   )
 }

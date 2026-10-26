@@ -1,8 +1,7 @@
 import { useEffect, useState } from 'react'
-import { Link } from 'react-router'
 import { formatDate, todayIso } from '../lib/dates'
 import { BackupFormatError, MIN_PASSPHRASE_LENGTH, WrongSecretError } from '../lib/vault'
-import { ConfirmButton, Page, describe, useVault } from './common'
+import { BackLink, ConfirmButton, Page, describe, useVault } from './common'
 
 /** Returns false when the person dismissed the share sheet without saving. */
 async function saveFile(json: string): Promise<boolean> {
@@ -54,9 +53,7 @@ export default function Settings() {
 
   return (
     <Page>
-      <Link to="/" className="muted underline">
-        ‹ Back
-      </Link>
+      <BackLink to="/" />
       <h1 className="text-2xl font-semibold">Settings</h1>
 
       <section className="card flex flex-col gap-3">

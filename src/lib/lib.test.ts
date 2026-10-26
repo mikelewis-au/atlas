@@ -4,7 +4,7 @@ import { newRecoveryKey, normaliseRecoveryKey } from './crypto'
 import { ageLabel, parseBorn, todayIso } from './dates'
 import { canEnd, household, linkExists, linkFor, relationsOf, roleOf } from './links'
 import type { Child, Fact, Link, MapEntry, Note, Person } from './model'
-import { searchPeople } from './search'
+import { searchMatches, searchPeople } from './search'
 import { inSide } from './space'
 
 const base = { createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z' }
@@ -185,6 +185,29 @@ describe('searchPeople', () => {
   it('searches notes and map entries', () => {
     expect(names('trail')).toEqual(['Priya Shah'])
     expect(names('bakery')).toEqual(['Priya Shah'])
+  })
+
+  it('says what matched when it was not the name', () => {
+    const snippets = (query: string) =>
+      searchMatches(query, data).map((m) => [m.person.name, m.snippet])
+    expect(snippets('priya')).toEqual([['Priya Shah', undefined]])
+    expect(snippets('twins')).toEqual([['Dave Tester', 'Has twin girls']])
+    expect(snippets('bakery')).toEqual([['Priya Shah', 'Wants to open a bakery']])
+    expect(snippets('ollie')).toEqual([
+      ['Dave Tester', 'Ollie'],
+      ['Priya Shah', 'Ollie'],
+    ])
+  })
+
+  it('trims a long snippet around the match', () => {
+    const long = 'A '.repeat(80) + 'went to Japan in the holidays' + ' B'.repeat(80)
+    const noisy = {
+      ...data,
+      notes: [{ ...notes[0], text: long }],
+    }
+    const [match] = searchMatches('japan', noisy)
+    expect(match.snippet!.length).toBeLessThan(90)
+    expect(match.snippet).toMatch(/^…A .*went to Japan in the holidays B.*…$/)
   })
 
   it('ignores accents in either the query or the record', () => {

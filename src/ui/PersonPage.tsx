@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router'
+import { addChild, childLabel, childrenOf, parseChild } from '../lib/children'
 import { ageLabel, formatDate, parseBorn, todayIso } from '../lib/dates'
 import {
   ROLES,
@@ -10,12 +11,15 @@ import {
   household,
   relationsOf,
 } from '../lib/links'
-import type { Note, Person, Space } from '../lib/model'
-import { addChild, childLabel, childrenOf } from '../lib/children'
+import type { Note, OpenLoop, Person, Space } from '../lib/model'
 import { connect, deletePerson, notesFor } from '../lib/people'
 import {
+  BackLink,
   ConfirmButton,
+  Editable,
+  ErrorText,
   Page,
+  Reveal,
   SensitiveBadge,
   SensitiveToggle,
   useVault,
@@ -30,9 +34,7 @@ export default function PersonPage() {
   if (!person) {
     return (
       <Page>
-        <Link to="/" className="muted underline">
-          ‹ Back
-        </Link>
+        <BackLink to="/" />
         <p>This person is no longer here.</p>
       </Page>
     )
@@ -44,9 +46,7 @@ export default function PersonPage() {
 
   return (
     <Page>
-      <Link to="/" className="muted underline">
-        ‹ Back
-      </Link>
+      <BackLink to="/" />
 
       <header className="flex flex-col gap-2">
         <div className="flex items-start justify-between gap-3">
@@ -68,15 +68,13 @@ export default function PersonPage() {
           </div>
         </div>
         {person.howIKnow && <p className="muted">{person.howIKnow}</p>}
-        {space !== 'personal' && (
-          <span className="chip self-start">{SPACE_LABELS[space]}</span>
-        )}
-        {person.tags.length > 0 && (
+        {(space !== 'personal' || person.tags.length > 0) && (
           <div className="flex flex-wrap gap-1">
+            {space !== 'personal' && <span className="chip">{SPACE_LABELS[space]}</span>}
             {person.tags.map((tag) => (
-              <span key={tag} className="chip">
+              <Link key={tag} to={`/?q=${encodeURIComponent(tag)}`} className="chip">
                 {tag}
-              </span>
+              </Link>
             ))}
           </div>
         )}
@@ -91,9 +89,6 @@ export default function PersonPage() {
 
       <Briefing person={person} relations={relations} />
       <NoteForm personId={person.id} />
-      <Loops personId={person.id} />
-      <Facts personId={person.id} />
-      <Kids personId={person.id} />
       <Connections person={person} relations={relations} />
       <Notes personId={person.id} />
     </Page>
@@ -207,7 +202,7 @@ function EditPerson({ person, onDone }: { person: Person; onDone: () => void }) 
         <input type="checkbox" checked={hasMap} onChange={(e) => setHasMap(e.target.checked)} />
         Keep a love map
       </label>
-      {error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
+      {error && <ErrorText>{error}</ErrorText>}
       <div className="flex justify-between gap-2">
         <ConfirmButton
           label="Delete person"
@@ -225,17 +220,12 @@ function EditPerson({ person, onDone }: { person: Person; onDone: () => void }) 
   )
 }
 
+/** Everything worth knowing before the next conversation, each part editable in place. */
 function Briefing({ person, relations }: { person: Person; relations: Relation[] }) {
   const vault = useVault()
   const lastNote = notesFor(vault, person.id)[0]
-  const openLoops = vault
-    .all('loop')
-    .filter((loop) => loop.personId === person.id && loop.status === 'open')
-  const home = household(relations)
-  const kids = childrenOf(vault.all('child'), person.id)
-
   return (
-    <section className="card flex flex-col gap-3" data-testid="briefing">
+    <section className="card flex flex-col gap-4" data-testid="briefing">
       <div>
         <h2 className="section-title">Last conversation</h2>
         {lastNote ? (
@@ -247,38 +237,227 @@ function Briefing({ person, relations }: { person: Person; relations: Relation[]
           <p className="muted">Nothing noted yet.</p>
         )}
       </div>
-      {openLoops.length > 0 && (
-        <div>
-          <h2 className="section-title">Ask about</h2>
-          <ul className="list-disc pl-5">
-            {openLoops.map((loop) => (
-              <li key={loop.id}>
-                {loop.text}
-                {loop.dueDate && <span className="muted ml-2">{formatDate(loop.dueDate)}</span>}
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-      {(home.length > 0 || kids.length > 0) && (
-        <div>
-          <h2 className="section-title">Household</h2>
-          <ul>
-            {home.map((relation) => (
-              <li key={relation.link.id}>
-                <RelationLine relation={relation} />
-              </li>
-            ))}
-          </ul>
-          {kids.length > 0 && (
-            <p>
-              <span className="muted mr-2">Kids</span>
-              {kids.map((child) => childLabel(child)).join(', ')}
-            </p>
-          )}
-        </div>
-      )}
+      <Loops personId={person.id} />
+      <Facts personId={person.id} />
+      <Household personId={person.id} relations={relations} />
     </section>
+  )
+}
+
+function Loops({ personId }: { personId: string }) {
+  const vault = useVault()
+  const [text, setText] = useState('')
+  const [dueDate, setDueDate] = useState('')
+  const loops = vault
+    .all('loop')
+    .filter((loop) => loop.personId === personId)
+    .sort((a, b) => (a.dueDate ?? '9999').localeCompare(b.dueDate ?? '9999') || a.createdAt.localeCompare(b.createdAt))
+  const open = loops.filter((loop) => loop.status === 'open')
+  const done = loops.filter((loop) => loop.status === 'closed')
+
+  async function add(event: React.FormEvent) {
+    event.preventDefault()
+    if (!text.trim()) return
+    await vault.create('loop', {
+      personId,
+      text: text.trim(),
+      dueDate: dueDate || undefined,
+      status: 'open',
+    })
+    setText('')
+    setDueDate('')
+  }
+
+  return (
+    <div className="flex flex-col gap-2" data-testid="loops">
+      <h2 className="section-title mb-0">Ask about</h2>
+      {open.map((loop) => (
+        <LoopRow key={loop.id} loop={loop} />
+      ))}
+      {done.length > 0 && (
+        <details>
+          <summary className="muted cursor-pointer">Done ({done.length})</summary>
+          <div className="mt-1 flex flex-col gap-2">
+            {done.map((loop) => (
+              <LoopRow key={loop.id} loop={loop} />
+            ))}
+          </div>
+        </details>
+      )}
+      <Reveal label="Add something to ask">
+        {(close) => (
+          <form onSubmit={add} className="flex flex-col gap-2">
+            <input
+              className="input"
+              placeholder="e.g. How did the interview go?"
+              autoFocus
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+            />
+            <div className="flex items-center gap-2">
+              <input
+                type="date"
+                className="input"
+                aria-label="When it happens (optional)"
+                value={dueDate}
+                onChange={(e) => setDueDate(e.target.value)}
+              />
+              <button className="btn shrink-0" disabled={!text.trim()}>
+                Add
+              </button>
+              <button type="button" className="muted shrink-0 underline" onClick={close}>
+                Done
+              </button>
+            </div>
+          </form>
+        )}
+      </Reveal>
+    </div>
+  )
+}
+
+function LoopRow({ loop }: { loop: OpenLoop }) {
+  const vault = useVault()
+  const closed = loop.status === 'closed'
+  return (
+    <div className="flex items-start gap-2">
+      <input
+        type="checkbox"
+        className="mt-1.5"
+        aria-label={closed ? `Reopen: ${loop.text}` : `Done: ${loop.text}`}
+        checked={closed}
+        onChange={(e) => void vault.update('loop', loop.id, { status: e.target.checked ? 'closed' : 'open' })}
+      />
+      <div className="grow">
+        <Editable
+          text={loop.text}
+          className={closed ? 'muted line-through' : ''}
+          onSave={(text) => vault.update('loop', loop.id, { text })}
+          onDelete={() => void vault.remove(loop.id)}
+        >
+          {loop.text}
+          {loop.dueDate && <span className="muted ml-2 no-underline">{formatDate(loop.dueDate)}</span>}
+        </Editable>
+      </div>
+    </div>
+  )
+}
+
+function Facts({ personId }: { personId: string }) {
+  const vault = useVault()
+  const [text, setText] = useState('')
+  const facts = vault
+    .all('fact')
+    .filter((fact) => fact.personId === personId)
+    .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+
+  async function add(event: React.FormEvent) {
+    event.preventDefault()
+    if (!text.trim()) return
+    await vault.create('fact', { personId, text: text.trim() })
+    setText('')
+  }
+
+  return (
+    <div className="flex flex-col gap-2" data-testid="facts">
+      <h2 className="section-title mb-0">Good to know</h2>
+      {facts.map((fact) => (
+        <Editable
+          key={fact.id}
+          text={fact.text}
+          onSave={(text) => vault.update('fact', fact.id, { text })}
+          onDelete={() => void vault.remove(fact.id)}
+        />
+      ))}
+      <Reveal label="Add something good to know">
+        {(close) => (
+          <form onSubmit={add} className="flex gap-2">
+            <input
+              className="input"
+              placeholder="e.g. Barracks for Carlton"
+              autoFocus
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+            />
+            <button className="btn shrink-0" disabled={!text.trim()}>
+              Add
+            </button>
+            <button type="button" className="muted shrink-0 underline" onClick={close}>
+              Done
+            </button>
+          </form>
+        )}
+      </Reveal>
+    </div>
+  )
+}
+
+function Household({ personId, relations }: { personId: string; relations: Relation[] }) {
+  const vault = useVault()
+  const [text, setText] = useState('')
+  const home = household(relations)
+  const kids = childrenOf(vault.all('child'), personId)
+
+  async function add(event: React.FormEvent) {
+    event.preventDefault()
+    if (await addChild(vault, personId, text)) setText('')
+  }
+
+  return (
+    <div className="flex flex-col gap-2" data-testid="household">
+      <h2 className="section-title mb-0">Household</h2>
+      {home.length > 0 && (
+        <ul>
+          {home.map((relation) => (
+            <li key={relation.link.id}>
+              <RelationLine relation={relation} />
+            </li>
+          ))}
+        </ul>
+      )}
+      {kids.length > 0 && (
+        <div className="flex flex-col gap-1">
+          <span className="muted">Kids</span>
+          {kids.map((child) => (
+            <Editable
+              key={child.id}
+              text={child.born ? `${child.name} ${child.born}` : child.name}
+              deleteLabel="Remove"
+              onSave={(value) => {
+                const parsed = parseChild(value)
+                if (parsed) return vault.update('child', child.id, { name: parsed.name, born: parsed.born })
+              }}
+              onDelete={() => void vault.remove(child.id)}
+            >
+              {childLabel(child)}
+            </Editable>
+          ))}
+        </div>
+      )}
+      <Reveal label="Add a child">
+        {(close) => (
+          <form onSubmit={add} className="flex flex-col gap-1">
+            <div className="flex gap-2">
+              <input
+                className="input"
+                placeholder="Name, or name and birth year"
+                aria-label="Child's name"
+                autoFocus
+                value={text}
+                onChange={(e) => setText(e.target.value)}
+              />
+              <button className="btn shrink-0" disabled={!text.trim()}>
+                Add child
+              </button>
+              <button type="button" className="muted shrink-0 underline" onClick={close}>
+                Done
+              </button>
+            </div>
+            <p className="muted">Kids also show on the card of anyone linked as a partner.</p>
+          </form>
+        )}
+      </Reveal>
+    </div>
   )
 }
 
@@ -303,6 +482,8 @@ function NoteForm({ personId }: { personId: string }) {
   const [text, setText] = useState('')
   const [date, setDate] = useState(todayIso())
   const [sensitive, setSensitive] = useState(false)
+  const [focused, setFocused] = useState(false)
+  const active = focused || text.trim().length > 0
 
   async function save(event: React.FormEvent) {
     event.preventDefault()
@@ -310,193 +491,40 @@ function NoteForm({ personId }: { personId: string }) {
     await vault.create('note', { personId, date, text: text.trim(), sensitive })
     setText('')
     setSensitive(false)
+    setDate(todayIso())
   }
 
   return (
     <form onSubmit={save} className="card flex flex-col gap-2">
-      <h2 className="section-title">New note</h2>
       <textarea
         className="input"
-        rows={4}
+        rows={active ? 5 : 2}
         placeholder="What did you talk about?"
+        aria-label="New note"
         value={text}
         onChange={(e) => setText(e.target.value)}
+        onFocus={() => setFocused(true)}
+        onBlur={() => setFocused(false)}
       />
-      <div className="flex items-center justify-between gap-2">
-        <input
-          type="date"
-          className="input w-auto"
-          aria-label="Conversation date"
-          value={date}
-          max={todayIso()}
-          onChange={(e) => setDate(e.target.value || todayIso())}
-        />
-        <SensitiveToggle checked={sensitive} onChange={setSensitive} />
-      </div>
-      <button className="btn btn-primary" disabled={!text.trim()}>
-        Save note
-      </button>
-    </form>
-  )
-}
-
-function Loops({ personId }: { personId: string }) {
-  const vault = useVault()
-  const [text, setText] = useState('')
-  const [dueDate, setDueDate] = useState('')
-  const loops = vault
-    .all('loop')
-    .filter((loop) => loop.personId === personId)
-    .sort((a, b) => a.status.localeCompare(b.status) * -1 || b.createdAt.localeCompare(a.createdAt))
-
-  async function add(event: React.FormEvent) {
-    event.preventDefault()
-    if (!text.trim()) return
-    await vault.create('loop', {
-      personId,
-      text: text.trim(),
-      dueDate: dueDate || undefined,
-      status: 'open',
-    })
-    setText('')
-    setDueDate('')
-  }
-
-  return (
-    <section className="card flex flex-col gap-2">
-      <h2 className="section-title">Things to ask about</h2>
-      {loops.map((loop) => (
-        <div key={loop.id} className="flex items-start justify-between gap-2">
-          <label className="flex items-start gap-2">
+      {active && (
+        <>
+          <div className="flex items-center justify-between gap-2">
             <input
-              type="checkbox"
-              className="mt-1.5"
-              checked={loop.status === 'closed'}
-              onChange={(e) =>
-                void vault.update('loop', loop.id, { status: e.target.checked ? 'closed' : 'open' })
-              }
+              type="date"
+              className="input w-auto"
+              aria-label="Conversation date"
+              value={date}
+              max={todayIso()}
+              onChange={(e) => setDate(e.target.value || todayIso())}
             />
-            <span className={loop.status === 'closed' ? 'muted line-through' : ''}>
-              {loop.text}
-              {loop.dueDate && <span className="muted ml-2">{formatDate(loop.dueDate)}</span>}
-            </span>
-          </label>
-          <button
-            type="button"
-            className="muted underline"
-            onClick={() => void vault.remove(loop.id)}
-          >
-            Remove
+            <SensitiveToggle checked={sensitive} onChange={setSensitive} />
+          </div>
+          <button className="btn btn-primary" disabled={!text.trim()}>
+            Save note
           </button>
-        </div>
-      ))}
-      <form onSubmit={add} className="flex flex-col gap-2">
-        <input
-          className="input"
-          placeholder="e.g. How did the interview go?"
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-        />
-        <div className="flex gap-2">
-          <input
-            type="date"
-            className="input"
-            aria-label="When it happens (optional)"
-            value={dueDate}
-            onChange={(e) => setDueDate(e.target.value)}
-          />
-          <button className="btn shrink-0" disabled={!text.trim()}>
-            Add
-          </button>
-        </div>
-      </form>
-    </section>
-  )
-}
-
-function Facts({ personId }: { personId: string }) {
-  const vault = useVault()
-  const [text, setText] = useState('')
-  const facts = vault
-    .all('fact')
-    .filter((fact) => fact.personId === personId)
-    .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
-
-  async function add(event: React.FormEvent) {
-    event.preventDefault()
-    if (!text.trim()) return
-    await vault.create('fact', { personId, text: text.trim() })
-    setText('')
-  }
-
-  return (
-    <section className="card flex flex-col gap-2">
-      <h2 className="section-title">Good to know</h2>
-      {facts.map((fact) => (
-        <div key={fact.id} className="flex items-start justify-between gap-2">
-          <span>{fact.text}</span>
-          <button
-            type="button"
-            className="muted underline"
-            onClick={() => void vault.remove(fact.id)}
-          >
-            Remove
-          </button>
-        </div>
-      ))}
-      <form onSubmit={add} className="flex gap-2">
-        <input
-          className="input"
-          placeholder="e.g. Barracks for Carlton"
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-        />
-        <button className="btn shrink-0" disabled={!text.trim()}>
-          Add
-        </button>
-      </form>
-    </section>
-  )
-}
-
-function Kids({ personId }: { personId: string }) {
-  const vault = useVault()
-  const [text, setText] = useState('')
-  const kids = childrenOf(vault.all('child'), personId)
-
-  async function add(event: React.FormEvent) {
-    event.preventDefault()
-    if (await addChild(vault, personId, text)) setText('')
-  }
-
-  return (
-    <section className="card flex flex-col gap-2" data-testid="kids">
-      <h2 className="section-title">Kids</h2>
-      {kids.map((child) => (
-        <div key={child.id} className="flex items-start justify-between gap-2">
-          <span>{childLabel(child)}</span>
-          <ConfirmButton
-            label="Remove"
-            confirmLabel="Tap again"
-            className="muted underline"
-            onConfirm={() => void vault.remove(child.id)}
-          />
-        </div>
-      ))}
-      <form onSubmit={add} className="flex gap-2">
-        <input
-          className="input"
-          placeholder="Name, or name and birth year"
-          aria-label="Child's name"
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-        />
-        <button className="btn shrink-0" disabled={!text.trim()}>
-          Add child
-        </button>
-      </form>
-      <p className="muted">Kids also show on the card of anyone linked as their partner.</p>
-    </section>
+        </>
+      )}
+    </form>
   )
 }
 
@@ -519,13 +547,15 @@ function Connections({ person, relations }: { person: Person; relations: Relatio
     let targetId = otherId
     if (otherId === NEW_PERSON) {
       if (!newName.trim()) return
-      targetId = (await vault.create('person', {
+      targetId = (
+        await vault.create('person', {
           name: newName.trim(),
           circle: false,
           // A colleague's partner belongs with the colleague, not among personal contacts.
           space: person.space,
           tags: [],
-        })).id
+        })
+      ).id
     }
     if (!(await connect(vault, person.id, targetId, role))) {
       return setError('That connection is already recorded.')
@@ -535,8 +565,9 @@ function Connections({ person, relations }: { person: Person; relations: Relatio
   }
 
   return (
-    <section className="card flex flex-col gap-2">
+    <section className="card flex flex-col gap-2" data-testid="connections">
       <h2 className="section-title">Connections</h2>
+      {relations.length === 0 && <p className="muted">No one linked yet.</p>}
       <ul className="flex flex-col gap-1">
         {relations.map((relation) => (
           <li key={relation.link.id} className="flex items-start justify-between gap-2">
@@ -553,61 +584,68 @@ function Connections({ person, relations }: { person: Person; relations: Relatio
                   {relation.link.ended ? 'Current' : 'Ended'}
                 </button>
               )}
-              <button
-                type="button"
+              <ConfirmButton
+                label="Remove"
+                confirmLabel="Tap again"
                 className="muted underline"
-                onClick={() => void vault.remove(relation.link.id)}
-              >
-                Remove
-              </button>
+                onConfirm={() => void vault.remove(relation.link.id)}
+              />
             </span>
           </li>
         ))}
       </ul>
-      <form onSubmit={add} className="flex flex-col gap-2">
-        <div className="flex gap-2">
-          <select
-            className="input"
-            aria-label="Relationship"
-            value={role}
-            onChange={(e) => setRole(e.target.value as Role)}
-          >
-            {ROLES.map((option) => (
-              <option key={option} value={option}>
-                {option === 'child' ? 'Child (own card)' : ROLE_LABELS[option]}
-              </option>
-            ))}
-          </select>
-          <select
-            className="input"
-            aria-label="Person"
-            value={otherId}
-            onChange={(e) => setOtherId(e.target.value)}
-          >
-            <option value={NEW_PERSON}>New person…</option>
-            {others.map((other) => (
-              <option key={other.id} value={other.id}>
-                {other.name}
-                {other.howIKnow ? ` (${other.howIKnow})` : ''}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div className="flex gap-2">
-          {otherId === NEW_PERSON && (
-            <input
-              className="input"
-              placeholder="Their name"
-              value={newName}
-              onChange={(e) => setNewName(e.target.value)}
-            />
-          )}
-          <button className="btn shrink-0" disabled={otherId === NEW_PERSON && !newName.trim()}>
-            Add connection
-          </button>
-        </div>
-        {error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
-      </form>
+      <Reveal label="Add a connection">
+        {(close) => (
+          <form onSubmit={add} className="flex flex-col gap-2">
+            <div className="flex gap-2">
+              <select
+                className="input"
+                aria-label="Relationship"
+                value={role}
+                onChange={(e) => setRole(e.target.value as Role)}
+              >
+                {ROLES.map((option) => (
+                  <option key={option} value={option}>
+                    {option === 'child' ? 'Child (own card)' : ROLE_LABELS[option]}
+                  </option>
+                ))}
+              </select>
+              <select
+                className="input"
+                aria-label="Person"
+                value={otherId}
+                onChange={(e) => setOtherId(e.target.value)}
+              >
+                <option value={NEW_PERSON}>New person…</option>
+                {others.map((other) => (
+                  <option key={other.id} value={other.id}>
+                    {other.name}
+                    {other.howIKnow ? ` (${other.howIKnow})` : ''}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="flex gap-2">
+              {otherId === NEW_PERSON && (
+                <input
+                  className="input"
+                  placeholder="Their name"
+                  autoFocus
+                  value={newName}
+                  onChange={(e) => setNewName(e.target.value)}
+                />
+              )}
+              <button className="btn shrink-0" disabled={otherId === NEW_PERSON && !newName.trim()}>
+                Add connection
+              </button>
+              <button type="button" className="muted shrink-0 underline" onClick={close}>
+                Done
+              </button>
+            </div>
+            {error && <ErrorText>{error}</ErrorText>}
+          </form>
+        )}
+      </Reveal>
     </section>
   )
 }
@@ -618,7 +656,7 @@ function Notes({ personId }: { personId: string }) {
   if (notes.length === 0) return null
   return (
     <section className="flex flex-col gap-2">
-      <h2 className="section-title">All notes</h2>
+      <h2 className="section-title">All notes ({notes.length})</h2>
       {notes.map((note) => (
         <NoteItem key={note.id} note={note} />
       ))}
@@ -648,38 +686,42 @@ function NoteItem({ note }: { note: Note }) {
         <>
           <textarea
             className="input"
-            rows={4}
+            rows={5}
             aria-label="Note text"
+            autoFocus
             value={text}
             onChange={(e) => setText(e.target.value)}
           />
           <SensitiveToggle checked={sensitive} onChange={setSensitive} />
-          <div className="flex justify-between gap-2">
+          <div className="flex items-center justify-between gap-2">
             <ConfirmButton
               label="Delete"
               confirmLabel="Tap again to delete"
+              className="text-sm text-red-600 underline dark:text-red-400"
               onConfirm={() => void vault.remove(note.id)}
             />
-            <button type="button" className="btn btn-primary" onClick={() => void save()}>
-              Save
-            </button>
+            <span className="flex gap-3">
+              <button type="button" className="muted underline" onClick={() => setEditing(false)}>
+                Cancel
+              </button>
+              <button type="button" className="btn btn-primary py-1" onClick={() => void save()}>
+                Save
+              </button>
+            </span>
           </div>
         </>
       ) : (
-        <>
-          <p className="whitespace-pre-wrap">{note.text}</p>
-          <button
-            type="button"
-            className="muted self-start underline"
-            onClick={() => {
-              setText(note.text)
-              setSensitive(note.sensitive)
-              setEditing(true)
-            }}
-          >
-            Edit
-          </button>
-        </>
+        <button
+          type="button"
+          className="text-left whitespace-pre-wrap"
+          onClick={() => {
+            setText(note.text)
+            setSensitive(note.sensitive)
+            setEditing(true)
+          }}
+        >
+          {note.text}
+        </button>
       )}
     </article>
   )

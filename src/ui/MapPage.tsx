@@ -5,7 +5,15 @@ import { formatDate, todayIso } from '../lib/dates'
 import { relationsOf } from '../lib/links'
 import { MAP_SECTIONS, type SectionInfo, sectionInfo } from '../lib/map'
 import type { MapEntry, MapSection, Person, Question } from '../lib/model'
-import { ConfirmButton, Page, SensitiveBadge, SensitiveToggle, useVault } from './common'
+import {
+  BackLink,
+  Editable,
+  Page,
+  Reveal,
+  SensitiveBadge,
+  SensitiveToggle,
+  useVault,
+} from './common'
 
 export default function MapPage() {
   const { id = '' } = useParams()
@@ -16,9 +24,7 @@ export default function MapPage() {
   if (!person?.hasMap) {
     return (
       <Page>
-        <Link to="/" className="muted underline">
-          ‹ Back
-        </Link>
+        <BackLink to="/" />
         <p>There is no love map here.</p>
       </Page>
     )
@@ -32,9 +38,7 @@ export default function MapPage() {
 
   return (
     <Page>
-      <Link to={`/person/${person.id}`} className="muted underline">
-        ‹ {person.name}
-      </Link>
+      <BackLink to={`/person/${person.id}`} label={person.name} />
       <header className="flex items-center justify-between gap-3">
         <h1 className="text-2xl font-semibold">Love map</h1>
         <button
@@ -104,30 +108,36 @@ function Cast({ person }: { person: Person }) {
   return (
     <section className="card flex flex-col gap-2">
       <h2 className="section-title">Cast of characters</h2>
-      {relations.length === 0 && kids.length === 0 && <p className="muted">No one linked yet.</p>}
+      {relations.length === 0 && kids.length === 0 && (
+        <p className="muted">
+          No one linked yet.{' '}
+          <Link to={`/person/${person.id}`} className="underline">
+            Add family, friends and colleagues under Connections.
+          </Link>
+        </p>
+      )}
       {kids.length > 0 && (
         <p>
           <span className="muted mr-2">Kids</span>
           {kids.map((child) => childLabel(child)).join(', ')}
         </p>
       )}
-      <ul>
-        {relations.map((relation) => {
-          const other = vault.get('person', relation.otherId)
-          if (!other) return null
-          return (
-            <li key={relation.link.id}>
-              <Link to={`/person/${other.id}`} className="font-medium underline">
-                {other.name}
-              </Link>
-              <span className="muted ml-2">{relation.label}</span>
-            </li>
-          )
-        })}
-      </ul>
-      <Link to={`/person/${person.id}`} className="muted underline">
-        Add friends, family and colleagues under Connections
-      </Link>
+      {relations.length > 0 && (
+        <ul>
+          {relations.map((relation) => {
+            const other = vault.get('person', relation.otherId)
+            if (!other) return null
+            return (
+              <li key={relation.link.id}>
+                <Link to={`/person/${other.id}`} className="font-medium underline">
+                  {other.name}
+                </Link>
+                <span className="muted ml-2">{relation.label}</span>
+              </li>
+            )
+          })}
+        </ul>
+      )}
     </section>
   )
 }
@@ -163,50 +173,68 @@ function Section({
   return (
     <section className="card flex flex-col gap-2" data-testid={`map-${section.id}`}>
       <h2 className="section-title">{section.title}</h2>
+      {entries.length === 0 && <p className="muted">{section.placeholder}.</p>}
       {[...entries]
         .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
         .map((entry) => (
-          <div key={entry.id} className="flex flex-col gap-1">
-            <p className="whitespace-pre-wrap">{entry.text}</p>
-            <div className="flex items-center gap-3">
-              <span className="muted">{formatDate(entry.date)}</span>
-              {entry.sensitive && <SensitiveBadge />}
-              <button
-                type="button"
-                className="muted underline"
-                onClick={() =>
-                  void vault.update('mapEntry', entry.id, {
-                    status: 'resolved',
-                    resolvedAt: todayIso(),
-                  })
-                }
+          <div key={entry.id} className="flex items-start justify-between gap-3">
+            <div className="grow">
+              <Editable
+                text={entry.text}
+                onSave={(value) => vault.update('mapEntry', entry.id, { text: value })}
+                onDelete={() => void vault.remove(entry.id)}
               >
-                No longer current
-              </button>
-              <ConfirmButton
-                label="Delete"
-                confirmLabel="Tap again"
-                className="muted underline"
-                onConfirm={() => void vault.remove(entry.id)}
-              />
+                <span className="block whitespace-pre-wrap">{entry.text}</span>
+                <span className="muted">
+                  {formatDate(entry.date)}
+                  {entry.sensitive && (
+                    <span className="ml-2">
+                      <SensitiveBadge />
+                    </span>
+                  )}
+                </span>
+              </Editable>
             </div>
+            <button
+              type="button"
+              className="muted mt-0.5 shrink-0 underline"
+              aria-label={`Done: ${entry.text}`}
+              onClick={() =>
+                void vault.update('mapEntry', entry.id, {
+                  status: 'resolved',
+                  resolvedAt: todayIso(),
+                })
+              }
+            >
+              Done
+            </button>
           </div>
         ))}
-      <form onSubmit={add} className="flex flex-col gap-2">
-        <input
-          className="input"
-          placeholder={section.placeholder}
-          aria-label={`Add to ${section.title}`}
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-        />
-        <div className="flex items-center justify-between gap-2">
-          <SensitiveToggle checked={sensitive} onChange={setSensitive} />
-          <button className="btn" disabled={!text.trim()}>
-            Add
-          </button>
-        </div>
-      </form>
+      <Reveal label="Add">
+        {(close) => (
+          <form onSubmit={add} className="flex flex-col gap-2">
+            <input
+              className="input"
+              placeholder={section.placeholder}
+              aria-label={`Add to ${section.title}`}
+              autoFocus
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+            />
+            <div className="flex items-center justify-between gap-2">
+              <SensitiveToggle checked={sensitive} onChange={setSensitive} />
+              <span className="flex items-center gap-3">
+                <button type="button" className="muted underline" onClick={close}>
+                  Done
+                </button>
+                <button className="btn" disabled={!text.trim()}>
+                  Add
+                </button>
+              </span>
+            </div>
+          </form>
+        )}
+      </Reveal>
     </section>
   )
 }
@@ -230,34 +258,45 @@ function Questions({ personId }: { personId: string }) {
   return (
     <section className="card flex flex-col gap-3">
       <h2 className="section-title">Questions to ask</h2>
+      {questions.length === 0 && (
+        <p className="muted">Things you want to ask next time. Logging the answer files it in the map.</p>
+      )}
       {questions.map((question) => (
         <QuestionItem key={question.id} question={question} />
       ))}
-      <form onSubmit={add} className="flex flex-col gap-2">
-        <input
-          className="input"
-          placeholder="Something you want to ask"
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-        />
-        <div className="flex gap-2">
-          <select
-            className="input"
-            aria-label="Section the answer belongs in"
-            value={section}
-            onChange={(e) => setSection(e.target.value as MapSection)}
-          >
-            {MAP_SECTIONS.map((option) => (
-              <option key={option.id} value={option.id}>
-                {option.title}
-              </option>
-            ))}
-          </select>
-          <button className="btn shrink-0" disabled={!text.trim()}>
-            Add
-          </button>
-        </div>
-      </form>
+      <Reveal label="Add a question">
+        {(close) => (
+          <form onSubmit={add} className="flex flex-col gap-2">
+            <input
+              className="input"
+              placeholder="Something you want to ask"
+              autoFocus
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+            />
+            <div className="flex gap-2">
+              <select
+                className="input"
+                aria-label="Section the answer belongs in"
+                value={section}
+                onChange={(e) => setSection(e.target.value as MapSection)}
+              >
+                {MAP_SECTIONS.map((option) => (
+                  <option key={option.id} value={option.id}>
+                    {option.title}
+                  </option>
+                ))}
+              </select>
+              <button className="btn shrink-0" disabled={!text.trim()}>
+                Add
+              </button>
+              <button type="button" className="muted shrink-0 underline" onClick={close}>
+                Done
+              </button>
+            </div>
+          </form>
+        )}
+      </Reveal>
     </section>
   )
 }
@@ -284,10 +323,15 @@ function QuestionItem({ question }: { question: Question }) {
 
   return (
     <div className="flex flex-col gap-2">
-      <p>
+      <Editable
+        text={question.text}
+        deleteLabel="Remove"
+        onSave={(text) => vault.update('question', question.id, { text })}
+        onDelete={() => void vault.remove(question.id)}
+      >
         {question.text}
         <span className="muted ml-2">{sectionInfo(section).title}</span>
-      </p>
+      </Editable>
       {answering ? (
         <form onSubmit={logAnswer} className="flex gap-2">
           <input
@@ -303,18 +347,9 @@ function QuestionItem({ question }: { question: Question }) {
           </button>
         </form>
       ) : (
-        <div className="flex gap-3">
-          <button type="button" className="muted underline" onClick={() => setAnswering(true)}>
-            Log the answer
-          </button>
-          <button
-            type="button"
-            className="muted underline"
-            onClick={() => void vault.remove(question.id)}
-          >
-            Remove
-          </button>
-        </div>
+        <button type="button" className="muted self-start underline" onClick={() => setAnswering(true)}>
+          Log the answer
+        </button>
       )}
     </div>
   )
@@ -328,10 +363,11 @@ function Quiz({ person, current }: { person: Person; current: MapEntry[] }) {
   const [answer, setAnswer] = useState('')
   const [revealed, setRevealed] = useState(false)
   const section = filled[index % filled.length]
+  const firstName = person.name.split(/\s+/)[0]
 
   return (
     <section className="card flex flex-col gap-3">
-      <h2 className="text-lg font-medium">{section.quiz(person.name)}</h2>
+      <h2 className="text-lg font-medium">{section.quiz(firstName)}</h2>
       <textarea
         className="input"
         rows={3}
